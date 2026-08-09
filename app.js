@@ -35,6 +35,8 @@
     previewBtn: $('previewBtn'), reorderBtn: $('reorderBtn'), reorderDone: $('reorderDone'), toolbar: $('toolbar'), imageInput: $('imageInput'), pinBtn: $('pinBtn'), historyBtn: $('historyBtn'), shareBtn: $('shareBtn'), downloadBtn: $('downloadBtn'), archiveBtn: $('archiveBtn'), deleteBtn: $('deleteBtn'),
     writingSettingsBtn: $('writingSettingsBtn'), writingSettingsDialog: $('writingSettingsDialog'), writingSettingsForm: $('writingSettingsForm'), fontSelect: $('fontSelect'), fontSizeSelect: $('fontSizeSelect'), fontSample: $('fontSample'),
     backupBtn: $('backupBtn'), restoreBtn: $('restoreBtn'), restoreInput: $('restoreInput'),
+    bookmarkletLink: $('bookmarkletLink'), copyBookmarkletButton: $('copyBookmarkletButton'),
+    clipDialog: $('clipDialog'), clipSourceTitle: $('clipSourceTitle'), clipContent: $('clipContent'), clipDestination: $('clipDestination'), clipExistingOptions: $('clipExistingOptions'), clipNoteSearch: $('clipNoteSearch'), clipExistingNote: $('clipExistingNote'), clipPosition: $('clipPosition'), clipNewOptions: $('clipNewOptions'), clipNewTitle: $('clipNewTitle'), clipNewFolder: $('clipNewFolder'), clipCloseX: $('clipCloseX'), clipCancelButton: $('clipCancelButton'), clipSaveButton: $('clipSaveButton'),
     historyDialog: $('historyDialog'), historyList: $('historyList'), historyPreview: $('historyPreview'), historyPreviewMeta: $('historyPreviewMeta'), historyPreviewText: $('historyPreviewText'), historyPreviewClose: $('historyPreviewClose'), saveVersionBtn: $('saveVersionBtn'), historyCloseBtn: $('historyCloseBtn'), historyCloseX: $('historyCloseX'),
     toast: $('toast')
   };
@@ -998,6 +1000,147 @@
     selectedId = n.id; currentView='inbox'; currentFolder=null; currentTag=null; persist(); renderAll(); focusEditor(); closeSidebar();
   }
   function focusEditor(){ setTimeout(()=>{ if(cmEditor) cmEditor.focus(); else els.editor.focus(); }, 0); }
+
+  function appBaseUrl(){
+    const u=new URL(location.href);
+    u.search=''; u.hash='';
+    return u.href;
+  }
+  function buildBookmarklet(){
+    const target=appBaseUrl();
+    return `javascript:(()=>{const s=String(window.getSelection?window.getSelection():'').trim().slice(0,4000);const u=new URL(${JSON.stringify(target)});u.searchParams.set('clip','1');u.searchParams.set('url',location.href);u.searchParams.set('title',document.title||location.href);if(s)u.searchParams.set('selection',s);window.open(u.toString(),'_blank','noopener');})()`;
+  }
+  function setupBookmarklet(){
+    if(!els.bookmarkletLink) return;
+    const code=buildBookmarklet();
+    els.bookmarkletLink.href=code;
+    els.bookmarkletLink.addEventListener('click',e=>{ e.preventDefault(); toast('Drag “Save to Notes” to your bookmarks bar'); });
+    els.copyBookmarkletButton?.addEventListener('click',async()=>{
+      try{ await navigator.clipboard.writeText(code); toast('Bookmarklet copied'); }
+      catch{ prompt('Copy this bookmarklet:',code); }
+    });
+  }
+  function escapeMarkdownLinkText(text=''){
+    return String(text).replace(/\\/g,'\\\\').replace(/\]/g,'\\]');
+  }
+  function makeClipMarkdown(title,url,selection=''){
+    const safeTitle=escapeMarkdownLinkText(title||url||'Link');
+    const safeUrl=String(url||'').replace(/\)/g,'%29');
+    const link=safeUrl ? `[${safeTitle}](${safeUrl})` : safeTitle;
+    const chosen=String(selection||'').trim();
+    if(!chosen) return link;
+    const quote=chosen.split(/\r?\n/).map(line=>`> ${line}`).join('\n');
+    return `${link}\n\n${quote}`;
+  }
+  function clipFolderLabel(folderId){ return folderId ? folderPath(folderId) : 'Inbox'; }
+  function populateClipFolders(){
+    if(!els.clipNewFolder) return;
+    const wanted=els.clipNewFolder.value;
+    els.clipNewFolder.innerHTML='<option value="">Inbox</option>';
+    for(const {folder,depth} of orderedFolderRows()){
+      const opt=document.createElement('option'); opt.value=folder.id;
+      opt.textContent=`${'— '.repeat(depth)}${folder.name}`;
+      els.clipNewFolder.appendChild(opt);
+    }
+    if([...els.clipNewFolder.options].some(o=>o.value===wanted)) els.clipNewFolder.value=wanted;
+  }
+  function clipEligibleNotes(){
+    const q=(els.clipNoteSearch?.value||'').trim().toLowerCase();
+    return state.notes.filter(n=>!n.trashed).filter(n=>{
+      if(!q) return true;
+      return [displayTitle(n),folderPath(n.folderId),(n.tags||[]).join(' ')].join(' ').toLowerCase().includes(q);
+    }).sort((a,b)=>{
+      const fa=folderPath(a.folderId)||'Inbox', fb=folderPath(b.folderId)||'Inbox';
+      return fa.localeCompare(fb,undefined,{sensitivity:'base'}) || displayTitle(a).localeCompare(displayTitle(b),undefined,{sensitivity:'base'});
+    });
+  }
+  function populateClipNotes(preferredId=null){
+    if(!els.clipExistingNote) return;
+    const wanted=preferredId||els.clipExistingNote.value||selectedId;
+    const notes=clipEligibleNotes();
+    els.clipExistingNote.innerHTML='';
+    for(const note of notes){
+      const opt=document.createElement('option'); opt.value=note.id;
+      const where=note.archived ? 'Archive' : clipFolderLabel(note.folderId);
+      opt.textContent=`${where} — ${displayTitle(note)}`;
+      els.clipExistingNote.appendChild(opt);
+    }
+    if(!notes.length){
+      const opt=document.createElement('option'); opt.value=''; opt.textContent='No matching notes'; opt.disabled=true; opt.selected=true; els.clipExistingNote.appendChild(opt);
+    }else if(notes.some(n=>n.id===wanted)) els.clipExistingNote.value=wanted;
+  }
+  function updateClipDestinationUI(){
+    const existing=els.clipDestination?.value==='existing';
+    if(els.clipExistingOptions) els.clipExistingOptions.hidden=!existing;
+    if(els.clipNewOptions) els.clipNewOptions.hidden=existing;
+    if(existing) populateClipNotes();
+  }
+  function openClipDialog(payload){
+    if(!els.clipDialog) return;
+    const title=(payload.title||payload.url||'Web link').trim();
+    els.clipSourceTitle.textContent=title;
+    els.clipContent.value=makeClipMarkdown(title,payload.url,payload.selection);
+    els.clipDestination.value='new';
+    els.clipPosition.value='append';
+    els.clipNoteSearch.value='';
+    els.clipNewTitle.value=title;
+    populateClipFolders();
+    populateClipNotes(selectedId);
+    updateClipDestinationUI();
+    els.clipDialog.showModal?.();
+    setTimeout(()=>els.clipContent?.focus(),0);
+  }
+  function handleIncomingClip(){
+    const params=new URLSearchParams(location.search);
+    if(params.get('clip')!=='1') return;
+    const payload={
+      url:(params.get('url')||'').slice(0,8000),
+      title:(params.get('title')||'').slice(0,1000),
+      selection:(params.get('selection')||'').slice(0,4000)
+    };
+    // Clear the clip payload immediately so a refresh never opens it twice.
+    try{ history.replaceState(null,'',location.pathname+location.hash); }catch{}
+    openClipDialog(payload);
+  }
+  function noteViewForClip(note){
+    currentTag=null;
+    if(note.archived){ currentView='archived'; currentFolder=null; }
+    else if(note.folderId){ currentView='folder'; currentFolder=note.folderId; }
+    else { currentView='inbox'; currentFolder=null; }
+  }
+  function insertClipIntoBody(body,content,position){
+    const existing=String(body||'');
+    const addition=String(content||'').trim();
+    if(!addition) return existing;
+    if(!existing) return addition;
+    if(position==='prepend') return `${addition}\n\n${existing}`;
+    const separator=existing.endsWith('\n\n')?'':existing.endsWith('\n')?'\n':'\n\n';
+    return `${existing}${separator}${addition}`;
+  }
+  function saveIncomingClip(){
+    const content=(els.clipContent?.value||'').trim();
+    if(!content){ toast('Nothing to save'); return; }
+    flushPendingSave();
+    const createdAt=now();
+    if(els.clipDestination.value==='new'){
+      const folderId=els.clipNewFolder.value||null;
+      const title=els.clipNewTitle.value.trim()||'Web link';
+      const n={ id:id(), body:content, customTitle:title, tags:[], folderId, pinned:false, archived:false, trashed:false, deletedAt:null, created:createdAt, updated:createdAt, attachments:[] };
+      state.notes.unshift(n);
+      state.manualOrders ||= {};
+      const key=folderLocationKey(folderId);
+      state.manualOrders[key]=Array.isArray(state.manualOrders[key]) ? state.manualOrders[key].filter(x=>x!==n.id) : [];
+      state.manualOrders[key].unshift(n.id);
+      selectedId=n.id; noteViewForClip(n); persist(); renderAll(); queueAutoSnapshot(n); els.clipDialog.close(); toast('Saved to new note');
+      return;
+    }
+    const n=state.notes.find(note=>note.id===els.clipExistingNote.value && !note.trashed);
+    if(!n){ toast('Choose a note'); return; }
+    const position=els.clipPosition.value==='prepend'?'prepend':'append';
+    if(position==='prepend' && !n.customTitle && String(n.body||'').trim()) n.customTitle=displayTitle(n);
+    n.body=insertClipIntoBody(n.body,content,position);
+    n.updated=now(); selectedId=n.id; noteViewForClip(n); persist(); renderAll(); queueAutoSnapshot(n); els.clipDialog.close(); toast(position==='prepend'?'Prepended to note':'Appended to note');
+  }
 
   function folderById(folderId){ return state.folders.find(f=>f.id===folderId)||null; }
   function childFolders(parentId=null){
@@ -1978,6 +2121,12 @@
   });
   els.historyBtn.addEventListener('click',openHistory); els.saveVersionBtn.addEventListener('click',saveVersionNow); els.historyPreviewClose.addEventListener('click',()=>{els.historyPreview.hidden=true;els.historyList.hidden=false;}); els.historyCloseBtn.addEventListener('click',()=>els.historyDialog.close()); els.historyCloseX.addEventListener('click',()=>els.historyDialog.close());
   els.shareBtn.addEventListener('click',shareCurrent); els.downloadBtn.addEventListener('click',downloadCurrent); els.backupBtn.addEventListener('click',exportBackup); els.restoreBtn.addEventListener('click',()=>els.restoreInput.click()); els.restoreInput.addEventListener('change',()=>{if(els.restoreInput.files?.[0])importBackup(els.restoreInput.files[0]);els.restoreInput.value='';});
+  els.clipDestination?.addEventListener('change',updateClipDestinationUI);
+  els.clipNoteSearch?.addEventListener('input',()=>populateClipNotes());
+  els.clipSaveButton?.addEventListener('click',saveIncomingClip);
+  els.clipCancelButton?.addEventListener('click',()=>els.clipDialog?.close());
+  els.clipCloseX?.addEventListener('click',()=>els.clipDialog?.close());
+  setupBookmarklet();
   window.addEventListener('keydown',e=>{
     const target=e.target;
     const typing=target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement || target?.isContentEditable;
@@ -2061,6 +2210,7 @@
     applyWritingPreferences();
     if(!selectedId && state.notes.length) selectedId=state.notes[0].id;
     if(!state.notes.length) newNote(); else { renderAll(); scheduleStateMirror(); }
+    handleIncomingClip();
     window.dispatchEvent(new CustomEvent('notes-ready'));
   }
   initializeApp();

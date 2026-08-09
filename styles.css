@@ -177,3 +177,18 @@ body.dragging-folder .folder-drop-zone{transition:background .12s,box-shadow .12
 .folder-list.folder-root-target,.folder-children.folder-root-target{background:color-mix(in srgb,var(--accent-soft) 55%,transparent);border-radius:8px}
 .folder-drag-ghost{opacity:.25}.folder-drag-chosen>.folder-drop-zone>.folder-row{background:var(--accent-soft)}.folder-drag-fallback{box-shadow:var(--shadow);background:var(--panel);border:1px solid var(--line);border-radius:9px;opacity:.96;pointer-events:none}
 @media (hover:hover){.folder-drag-handle{opacity:.25}.folder-row:hover .folder-drag-handle{opacity:.9}}
+
+/* Web clipper bookmarklet */
+.bookmarklet-install-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.bookmarklet-link{text-decoration:none;display:inline-flex;align-items:center;justify-content:center;cursor:grab;user-select:none;-webkit-user-select:none}
+.bookmarklet-link:active{cursor:grabbing}
+.clip-modal{width:min(620px,calc(100vw - 28px));max-height:min(780px,calc(100dvh - 28px));overflow:auto}
+.clip-dialog-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:14px}
+.clip-dialog-head .modal-title{margin-bottom:3px}
+.clip-source-title{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:500px}
+.clip-field{display:grid;gap:6px;margin:12px 0;color:var(--muted);font-size:12px;font-weight:650}
+.clip-field input,.clip-field select,.clip-field textarea{width:100%;box-sizing:border-box;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--text);padding:10px 11px;font:inherit;font-weight:400;outline:none}
+.clip-field textarea{resize:vertical;min-height:105px;line-height:1.45;font-family:var(--note-font)}
+.clip-field input:focus,.clip-field select:focus,.clip-field textarea:focus{border-color:var(--accent)}
+.clip-actions{position:sticky;bottom:-18px;background:var(--panel);padding:12px 0 2px;border-top:1px solid var(--line)}
+@media(max-width:620px){.bookmarklet-install-row{align-items:stretch}.bookmarklet-install-row>*{flex:1 1 auto}.clip-modal{width:calc(100vw - 18px);max-height:calc(100dvh - 18px)}.clip-source-title{max-width:72vw}}

@@ -39,3 +39,8 @@ Dropbox tokens are stored locally in each browser, so do not connect Dropbox on 
 
 ## Nested folders
 Folders can be dragged onto other folders to create subfolders. Drag a subfolder back to the top-level folder area to unnest it. Nested folder structure syncs through Dropbox, and Markdown files follow the same folder hierarchy.
+
+
+## Web clipper bookmarklet
+
+Open **Settings → Web Clipper** in the hosted app and drag **Save to Notes** to the browser bookmarks bar. When used on a webpage, it opens Notes with the page title, URL, and any selected text. You can create a new note or append/prepend the clip to an existing note.
