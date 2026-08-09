@@ -35,3 +35,7 @@ Notes uses Dropbox OAuth 2 with PKCE, so no Dropbox app secret is placed in the 
 Notes stores its Dropbox data beneath `/Notes` in the app's private Dropbox app folder. Individual notes are saved as Markdown files. A small `.notes-index.json` file keeps note IDs, organization, and sync metadata aligned across devices. Image attachments are stored in matching `.assets` folders beside their note files.
 
 Dropbox tokens are stored locally in each browser, so do not connect Dropbox on a public or shared computer.
+
+
+## Nested folders
+Folders can be dragged onto other folders to create subfolders. Drag a subfolder back to the top-level folder area to unnest it. Nested folder structure syncs through Dropbox, and Markdown files follow the same folder hierarchy.

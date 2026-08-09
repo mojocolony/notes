@@ -172,10 +172,22 @@
   }
   function idSuffix(id){ return String(id||'note').replace(/^n-/,'').replace(/[^a-zA-Z0-9]/g,'').slice(0,8)||'note'; }
   function folderNameFor(state,note){ return state.folders?.find(f=>f.id===note.folderId)?.name||''; }
+  function folderPathFor(state,folderId){
+    if(!folderId) return '';
+    const byId=new Map((state.folders||[]).map(f=>[f.id,f]));
+    const parts=[]; const seen=new Set(); let cursor=byId.get(folderId);
+    while(cursor && !seen.has(cursor.id)){ parts.unshift(cursor.name); seen.add(cursor.id); cursor=cursor.parentId?byId.get(cursor.parentId):null; }
+    return parts.join(' / ');
+  }
+  function folderDirectoryFor(state,folderId){
+    const path=folderPathFor(state,folderId);
+    if(!path) return `${ROOT}/Folders/Folder`;
+    return `${ROOT}/Folders/${path.split(' / ').map(part=>safeSegment(part,60)).join('/')}`;
+  }
   function noteDirectory(state,note){
     if(note.trashed) return `${ROOT}/Trash`;
     if(note.archived) return `${ROOT}/Archive`;
-    if(note.folderId) return `${ROOT}/Folders/${safeSegment(folderNameFor(state,note)||'Folder',60)}`;
+    if(note.folderId) return folderDirectoryFor(state,note.folderId);
     return `${ROOT}/Inbox`;
   }
   function desiredNotePath(state,note){ return `${noteDirectory(state,note)}/${safeSegment(bridge()?.displayTitle?.(note)||'Untitled',64)}--${idSuffix(note.id)}.md`; }
@@ -197,7 +209,7 @@
       title:bridge()?.displayTitle?.(note)||'Untitled',
       customTitle:typeof note.customTitle==='string'?note.customTitle:null,
       created:note.created||now(), updated:note.updated||now(),
-      folderId:note.folderId||null, folder:folderNameFor(state,note)||null,
+      folderId:note.folderId||null, folder:folderPathFor(state,note.folderId)||null,
       tags:Array.isArray(note.tags)?note.tags:[], pinned:!!note.pinned, archived:!!note.archived, trashed:!!note.trashed,
       deletedAt:note.deletedAt||null, attachments:Array.isArray(note.attachments)?note.attachments:[]
     };

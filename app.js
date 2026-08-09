@@ -51,6 +51,7 @@
   let sortable = null;
   let noteListSortable = null;
   let folderDropSortables = [];
+  let folderTreeSortables = [];
   let tagItemSortables = [];
   let tagGroupSortable = null;
   let objectUrls = [];
@@ -336,7 +337,24 @@
   function normalizeState(parsed){
     if(!parsed || typeof parsed!=='object') parsed=defaultState();
     parsed.notes = Array.isArray(parsed.notes) ? parsed.notes : [];
-    parsed.folders = Array.isArray(parsed.folders) ? parsed.folders : [];
+    parsed.folders = Array.isArray(parsed.folders) ? parsed.folders.filter(f=>f&&f.id&&f.name).map(f=>({
+      ...f, id:String(f.id), name:String(f.name).trim()||'Folder', parentId:f.parentId?String(f.parentId):null, collapsed:!!f.collapsed
+    })) : [];
+    const folderIds=new Set(parsed.folders.map(f=>f.id));
+    for(const folder of parsed.folders){
+      if(!folder.parentId || folder.parentId===folder.id || !folderIds.has(folder.parentId)) folder.parentId=null;
+    }
+    // Break any malformed parent cycles from older/imported data so the tree
+    // can always render safely.
+    const folderByIdForNormalize=new Map(parsed.folders.map(f=>[f.id,f]));
+    for(const folder of parsed.folders){
+      const seen=new Set([folder.id]); let cursor=folder;
+      while(cursor?.parentId){
+        if(seen.has(cursor.parentId)){ folder.parentId=null; break; }
+        seen.add(cursor.parentId); cursor=folderByIdForNormalize.get(cursor.parentId);
+        if(!cursor){ folder.parentId=null; break; }
+      }
+    }
     parsed.deletedNotes = Array.isArray(parsed.deletedNotes) ? parsed.deletedNotes.filter(x=>x&&x.id&&x.deletedAt).map(x=>({id:String(x.id),deletedAt:String(x.deletedAt)})) : [];
     parsed.sortPrefs = parsed.sortPrefs && typeof parsed.sortPrefs==='object' ? parsed.sortPrefs : {};
     parsed.manualOrders = parsed.manualOrders && typeof parsed.manualOrders==='object' ? parsed.manualOrders : {};
@@ -981,6 +999,37 @@
   }
   function focusEditor(){ setTimeout(()=>{ if(cmEditor) cmEditor.focus(); else els.editor.focus(); }, 0); }
 
+  function folderById(folderId){ return state.folders.find(f=>f.id===folderId)||null; }
+  function childFolders(parentId=null){
+    const normalized=parentId||null;
+    return state.folders.filter(f=>(f.parentId||null)===normalized).slice().sort((a,b)=>a.name.localeCompare(b.name,undefined,{sensitivity:'base'}));
+  }
+  function folderPath(folderId){
+    if(!folderId) return '';
+    const names=[]; const seen=new Set(); let cursor=folderById(folderId);
+    while(cursor && !seen.has(cursor.id)){ names.unshift(cursor.name); seen.add(cursor.id); cursor=cursor.parentId?folderById(cursor.parentId):null; }
+    return names.join(' / ');
+  }
+  function folderIsInside(folderId,possibleAncestorId){
+    let cursor=folderById(folderId); const seen=new Set();
+    while(cursor?.parentId && !seen.has(cursor.id)){
+      seen.add(cursor.id);
+      if(cursor.parentId===possibleAncestorId) return true;
+      cursor=folderById(cursor.parentId);
+    }
+    return false;
+  }
+  function canMoveFolder(folderId,newParentId){
+    if(!folderId) return false;
+    if(!newParentId) return true;
+    return folderId!==newParentId && !folderIsInside(newParentId,folderId);
+  }
+  function orderedFolderRows(){
+    const rows=[];
+    const walk=(parentId,depth)=>{ for(const folder of childFolders(parentId)){ rows.push({folder,depth}); walk(folder.id,depth+1); } };
+    walk(null,0); return rows;
+  }
+
   function renderAll(){
     renderSidebar(); renderNotesList(); renderEditor();
   }
@@ -988,24 +1037,39 @@
     // Sortable temporarily moves the actual note-row DOM node into a drop
     // target. Remove any such transient rows before rebuilding navigation so
     // a moved note can never remain visually nested under Inbox or a folder.
-    document.querySelectorAll('.inbox-drop-zone > .note-row, .folder-drop-zone > .note-row').forEach(el=>el.remove());
+    document.querySelectorAll('.inbox-drop-zone > .note-row, .folder-drop-zone > .note-row, .folder-drop-zone > .folder-node').forEach(el=>el.remove());
     els.inboxCount.textContent = state.notes.filter(n=>!n.trashed&&!n.archived && !n.folderId).length || '';
     els.pinnedCount.textContent = state.notes.filter(n=>!n.trashed&&!n.archived && n.pinned).length || '';
     els.archiveCount.textContent = state.notes.filter(n=>!n.trashed&&n.archived).length || '';
     els.trashCount.textContent = state.notes.filter(n=>n.trashed).length || '';
     document.querySelectorAll('.nav-item').forEach(btn=>btn.classList.toggle('active', !currentTag && currentView===btn.dataset.view && !currentFolder));
     els.folderList.innerHTML='';
-    state.folders.sort((a,b)=>a.name.localeCompare(b.name)).forEach(f=>{
+    els.folderList.dataset.parentId='';
+    const makeFolderNode=(f)=>{
+      const children=childFolders(f.id);
       const count=state.notes.filter(n=>!n.trashed&&!n.archived&&n.folderId===f.id).length;
-      const zone=document.createElement('div');
-      zone.className='folder-drop-zone';
-      zone.dataset.folderId=f.id;
+      const node=document.createElement('div'); node.className='folder-node'; node.dataset.folderNodeId=f.id;
+      const zone=document.createElement('div'); zone.className='folder-drop-zone'; zone.dataset.folderId=f.id;
+      const row=document.createElement('div'); row.className='folder-row';
+      const handle=document.createElement('span'); handle.className='folder-drag-handle'; handle.textContent='⠿'; handle.title='Move folder'; handle.setAttribute('aria-label','Move folder');
+      row.appendChild(handle);
+      if(children.length){
+        const toggle=document.createElement('button'); toggle.className='folder-toggle'; toggle.type='button'; toggle.textContent=f.collapsed?'›':'⌄'; toggle.title=f.collapsed?'Expand folder':'Collapse folder'; toggle.setAttribute('aria-label',toggle.title);
+        toggle.addEventListener('click',e=>{ e.stopPropagation(); f.collapsed=!f.collapsed; persist(); renderSidebar(); });
+        row.appendChild(toggle);
+      }else{
+        const spacer=document.createElement('span'); spacer.className='folder-toggle-spacer'; row.appendChild(spacer);
+      }
       const b=document.createElement('button'); b.className='folder-item'+(currentFolder===f.id?' active':'');
       b.innerHTML=`<span class="folder-name">${escapeHtml(f.name)}</span><span class="count">${count||''}</span>`;
       b.addEventListener('click',()=>{ flushPendingSave(); currentTag=null; currentFolder=f.id; currentView='folder'; els.searchInput.value=''; renderAll(); closeSidebar(); });
-      zone.appendChild(b);
-      els.folderList.appendChild(zone);
-    });
+      row.appendChild(b); zone.appendChild(row); node.appendChild(zone);
+      const childList=document.createElement('div'); childList.className='folder-children'; childList.dataset.parentId=f.id; childList.hidden=!!f.collapsed;
+      children.forEach(child=>childList.appendChild(makeFolderNode(child)));
+      node.appendChild(childList);
+      return node;
+    };
+    childFolders(null).forEach(f=>els.folderList.appendChild(makeFolderNode(f)));
     if(els.tagList){
       state.ui ||= {tagsCollapsed:false};
       state.tagSettings ||= {sort:'az'};
@@ -1066,6 +1130,7 @@
       requestAnimationFrame(setupTagDragging);
     }
     fillFolderSelect();
+    requestAnimationFrame(setupFolderDragging);
     requestAnimationFrame(setupNoteDragging);
   }
   function setupTagDragging(){
@@ -1155,9 +1220,55 @@
     });
   }
 
+  function clearFolderTreeFeedback(){
+    document.querySelectorAll('.folder-drop-zone.folder-nest-target,.folder-list.folder-root-target,.folder-children.folder-root-target').forEach(el=>el.classList.remove('folder-nest-target','folder-root-target'));
+  }
+  function setupFolderDragging(){
+    folderTreeSortables.forEach(x=>{try{x.destroy();}catch{}}); folderTreeSortables=[];
+    clearFolderTreeFeedback();
+    if(!window.Sortable || !els.folderList) return;
+    const containers=[els.folderList,...els.folderList.querySelectorAll('.folder-children')];
+    for(const container of containers){
+      const target=new Sortable(container,{
+        group:{name:'folders-tree',pull:true,put:true},
+        draggable:'.folder-node', handle:'.folder-drag-handle', sort:false, animation:120,
+        forceFallback:true, fallbackOnBody:true, fallbackTolerance:3, delayOnTouchOnly:true, delay:100, touchStartThreshold:4,
+        ghostClass:'folder-drag-ghost', chosenClass:'folder-drag-chosen', fallbackClass:'folder-drag-fallback',
+        onChoose:()=>{ document.body.classList.add('dragging-folder'); clearFolderTreeFeedback(); },
+        onMove:evt=>{
+          clearFolderTreeFeedback();
+          const movedId=evt.dragged?.dataset?.folderNodeId;
+          const newParentId=evt.to?.dataset?.parentId||null;
+          if(!canMoveFolder(movedId,newParentId)) return false;
+          evt.to?.classList?.add('folder-root-target');
+          return true;
+        },
+        onAdd:evt=>{
+          const movedId=evt.item?.dataset?.folderNodeId;
+          const newParentId=evt.to?.dataset?.parentId||null;
+          evt.item?.remove();
+          const moved=folderById(movedId);
+          if(!moved || !canMoveFolder(movedId,newParentId)){
+            toast('That folder cannot be moved there'); renderSidebar(); return;
+          }
+          const previous=moved.parentId||null;
+          moved.parentId=newParentId;
+          if(newParentId){ const parent=folderById(newParentId); if(parent) parent.collapsed=false; }
+          if(previous!==newParentId){
+            persist();
+            toast(newParentId?`Moved ${moved.name} into ${folderById(newParentId)?.name||'folder'}`:`Moved ${moved.name} to top level`);
+          }
+          document.body.classList.remove('dragging-folder'); clearFolderTreeFeedback(); renderAll();
+        },
+        onEnd:()=>{ document.body.classList.remove('dragging-folder'); clearFolderTreeFeedback(); renderSidebar(); }
+      });
+      folderTreeSortables.push(target);
+    }
+  }
+
   function fillFolderSelect(){
     const val=currentNote()?.folderId || '';
-    els.folderSelect.innerHTML='<option value="">Inbox / No folder</option>'+state.folders.sort((a,b)=>a.name.localeCompare(b.name)).map(f=>`<option value="${f.id}">${escapeHtml(f.name)}</option>`).join('');
+    els.folderSelect.innerHTML='<option value="">Inbox / No folder</option>'+orderedFolderRows().map(({folder,depth})=>`<option value="${folder.id}">${escapeHtml(`${'— '.repeat(depth)}${folderPath(folder.id)}`)}</option>`).join('');
     els.folderSelect.value=val;
   }
   function visibleNotes(){
@@ -1168,7 +1279,7 @@
     return sortNotes(notesForCurrentView(true),preference);
   }
   function noteLocationLabel(note){
-    const folder=state.folders.find(f=>f.id===note.folderId)?.name;
+    const folder=folderPath(note.folderId);
     const place=folder||'Inbox';
     return note.trashed ? `Trash · ${place}` : (note.archived ? `Archive · ${place}` : place);
   }
@@ -1207,7 +1318,7 @@
   }
 
   function clearFolderDropHighlight(){
-    document.querySelectorAll('.folder-drop-zone.drop-target,.inbox-drop-zone.drop-target').forEach(el=>el.classList.remove('drop-target'));
+    document.querySelectorAll('.folder-drop-zone.drop-target,.folder-drop-zone.folder-nest-target,.inbox-drop-zone.drop-target').forEach(el=>el.classList.remove('drop-target','folder-nest-target'));
   }
   function setupNoteDragging(){
     if(noteListSortable){ noteListSortable.destroy(); noteListSortable=null; }
@@ -1256,19 +1367,35 @@
 
     document.querySelectorAll('.folder-drop-zone').forEach(zone=>{
       const target=new Sortable(zone,{
-        group:{name:'notes-to-folders',pull:false,put:true},
+        group:{name:'folder-drop-target',pull:false,put:['notes-to-folders','folders-tree']},
         sort:false,
-        draggable:'.note-row',
+        draggable:'.note-row,.folder-node',
         forceFallback:true,
         fallbackOnBody:true,
+        onMove:evt=>{
+          if(evt.dragged?.classList?.contains('folder-node')){ clearFolderTreeFeedback(); evt.to?.classList?.add('folder-nest-target'); }
+          return true;
+        },
         onAdd:evt=>{
           const noteId=evt.item?.dataset?.noteId;
+          const movedFolderId=evt.item?.dataset?.folderNodeId;
           const folderId=evt.to?.dataset?.folderId;
-          // The target is navigation, not a real list container. Sortable has
-          // inserted the note card here only as part of the drag operation, so
-          // remove that transient DOM node immediately and let renderAll()
-          // recreate the card in the correct notes pane.
+          // Navigation drop targets are not storage containers. Sortable puts
+          // the dragged DOM node here temporarily; remove it and rebuild from
+          // the saved hierarchy/state instead.
           evt.item?.remove();
+          if(movedFolderId && folderId){
+            const moved=folderById(movedFolderId);
+            if(moved && canMoveFolder(movedFolderId,folderId)){
+              moved.parentId=folderId;
+              const parent=folderById(folderId); if(parent) parent.collapsed=false;
+              persist();
+              toast(`Moved ${moved.name} into ${parent?.name||'folder'}`);
+            }else toast('That folder cannot be moved there');
+            document.body.classList.remove('dragging-folder');
+            clearFolderTreeFeedback(); clearFolderDropHighlight(); renderAll();
+            return;
+          }
           const note=state.notes.find(n=>n.id===noteId);
           if(note && folderId){
             const restored=moveNoteToFolder(note,folderId);
@@ -1711,7 +1838,7 @@
   }
 
   function openFolderDialog(){ els.folderNameInput.value=''; els.folderDialog.showModal(); setTimeout(()=>els.folderNameInput.focus(),20); }
-  function saveFolder(){ flushPendingSave(); const name=els.folderNameInput.value.trim(); if(!name)return; state.folders.push({id:id('f'),name}); persist(); els.folderDialog.close(); renderAll(); }
+  function saveFolder(){ flushPendingSave(); const name=els.folderNameInput.value.trim(); if(!name)return; state.folders.push({id:id('f'),name,parentId:null,collapsed:false}); persist(); els.folderDialog.close(); renderAll(); }
 
   function escapeHtml(s=''){ return s.replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
 
@@ -1913,6 +2040,7 @@
     deleteAttachments,
     displayTitle,
     getFolderName(folderId){ return state.folders.find(f=>f.id===folderId)?.name||''; },
+    getFolderPath(folderId){ return folderPath(folderId); },
     flushPendingSave,
     toast,
     normalizeStateForSync(value){ return normalizeState(value); }
