@@ -1862,10 +1862,47 @@
     }
     return files;
   }
-  async function handleImages(files){
+  function currentImageInsertionTarget(){
+    if(cmEditor) return {type:'codemirror',pos:cmEditor.getCursor()};
+    return {type:'textarea',start:els.editor.selectionStart||0,end:els.editor.selectionEnd||0};
+  }
+  function imageDropInsertionTarget(event){
+    if(cmEditor && Number.isFinite(event?.clientX) && Number.isFinite(event?.clientY)){
+      // CodeMirror's normal mouse handler does not get to place the caret because
+      // we intercept file drops. Convert the actual pointer coordinates into the
+      // document position before the asynchronous attachment save starts.
+      const pos=cmEditor.coordsChar({left:event.clientX,top:event.clientY},'window');
+      return {type:'codemirror',pos:{line:pos.line,ch:pos.ch}};
+    }
+    return currentImageInsertionTarget();
+  }
+  function insertImageMarkdown(text,target){
+    if(target?.type==='codemirror' && cmEditor){
+      const start={line:target.pos.line,ch:target.pos.ch};
+      cmEditor.replaceRange(text,start,start,'notes-image');
+      const lines=text.split('\n');
+      const end=lines.length===1
+        ? {line:start.line,ch:start.ch+lines[0].length}
+        : {line:start.line+lines.length-1,ch:lines[lines.length-1].length};
+      cmEditor.setCursor(end);
+      cmEditor.focus();
+      return;
+    }
+    if(target?.type==='textarea'){
+      const start=Math.max(0,Math.min(els.editor.value.length,target.start||0));
+      const end=Math.max(start,Math.min(els.editor.value.length,target.end??start));
+      els.editor.setRangeText(text,start,end,'end');
+      scheduleSave();
+      els.editor.focus();
+      return;
+    }
+    insertAtCursor(text);
+  }
+  async function handleImages(files,insertionTarget=null){
     const images=Array.from(files||[]).filter(file=>file && String(file.type||'').startsWith('image/'));
     if(!images.length) return;
     const n=currentNote(); if(!n) return;
+    const target=insertionTarget||currentImageInsertionTarget();
     const snippets=[];
     try{
       for(const file of images){
@@ -1879,9 +1916,9 @@
         if(!n.attachments.includes(filename)) n.attachments.push(filename);
         snippets.push(`![${base}](attachments/${filename})`);
       }
-      // Insert the Markdown first, then force a single complete save containing
-      // both the body reference and attachment metadata before Dropbox sees it.
-      insertAtCursor(snippets.join('\n\n'));
+      // Insert at the position captured when the paste/drop happened. In
+      // particular, a file drop should stay exactly where the pointer was released.
+      insertImageMarkdown(snippets.join('\n\n'),target);
       flushPendingSave();
       n.updated=now();
       persist();
@@ -2206,9 +2243,10 @@
   els.editorArea?.addEventListener('paste',e=>{
     const images=imageFilesFromTransfer(e.clipboardData);
     if(!images.length) return;
+    const insertionTarget=currentImageInsertionTarget();
     e.preventDefault();
     e.stopPropagation();
-    handleImages(images);
+    handleImages(images,insertionTarget);
   },true);
   let imageDragDepth=0;
   els.editorArea?.addEventListener('dragenter',e=>{
@@ -2231,9 +2269,10 @@
     els.editorArea.classList.remove('image-drag-over');
     const images=imageFilesFromTransfer(e.dataTransfer);
     if(!images.length) return;
+    const insertionTarget=imageDropInsertionTarget(e);
     e.preventDefault();
     e.stopPropagation();
-    handleImages(images);
+    handleImages(images,insertionTarget);
   },true);
   els.writingSettingsBtn.addEventListener('click',openWritingSettings);
   els.fontSelect.addEventListener('change',saveWritingPreference);
