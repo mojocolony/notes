@@ -202,3 +202,5 @@ body.dragging-folder .folder-drop-zone{transition:background .12s,box-shadow .12
 .clip-field input:focus,.clip-field select:focus,.clip-field textarea:focus{border-color:var(--accent)}
 .clip-actions{position:sticky;bottom:-18px;background:var(--panel);padding:12px 0 2px;border-top:1px solid var(--line)}
 @media(max-width:620px){.bookmarklet-install-row{align-items:stretch}.bookmarklet-install-row>*{flex:1 1 auto}.clip-modal{width:calc(100vw - 18px);max-height:calc(100dvh - 18px)}.clip-source-title{max-width:72vw}}
+
+.preview img.missing-attachment{min-height:72px;border:1px dashed var(--line);background:var(--panel-2);padding:10px}

@@ -1,5 +1,5 @@
-const CACHE='notes-v40';
-const ASSETS=['./','./index.html','./styles.css?v=40','./app.js?v=40','./dropbox.js?v=4','./manifest.webmanifest','./icon-192.png','./icon-512.png','./favicon-32.png?v=38','./favicon.ico?v=38'];
+const CACHE='notes-v41';
+const ASSETS=['./','./index.html','./styles.css?v=41','./app.js?v=41','./dropbox.js?v=5','./manifest.webmanifest','./icon-192.png','./icon-512.png','./favicon-32.png?v=41','./favicon.ico?v=41'];
 
 self.addEventListener('install',e=>e.waitUntil(
   caches.open(CACHE).then(c=>c.addAll(ASSETS)).then(()=>self.skipWaiting())

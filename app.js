@@ -1841,7 +1841,15 @@
   }
   function imageBaseName(file){
     const raw=String(file?.name||'').replace(/\.[^.]+$/,'').trim();
-    return safeFilename(raw && !/^image$/i.test(raw) ? raw : 'image');
+    const cleaned=safeFilename(raw && !/^image$/i.test(raw) ? raw : 'image')
+      .normalize('NFKD').replace(/[\u0300-\u036f]/g,'')
+      .replace(/[^a-zA-Z0-9_-]+/g,'-').replace(/^-+|-+$/g,'');
+    return (cleaned||'image').slice(0,64);
+  }
+  function attachmentNameFromMarkdownSrc(src=''){
+    let name=String(src||'').slice('attachments/'.length);
+    try{ name=decodeURIComponent(name); }catch{}
+    return name;
   }
   function imageFilesFromTransfer(source){
     const files=[];
@@ -1864,14 +1872,21 @@
         const ext=imageExtension(file);
         const base=imageBaseName(file);
         const filename=`${base}-${crypto.randomUUID().slice(0,6)}.${ext}`;
-        await putAttachment(n.id,filename,file);
+        // Store a plain Blob so IndexedDB uses the same payload reliably across browsers.
+        const blob=file instanceof Blob ? file.slice(0,file.size,file.type||`image/${ext}`) : file;
+        await putAttachment(n.id,filename,blob);
         n.attachments ||= [];
         if(!n.attachments.includes(filename)) n.attachments.push(filename);
         snippets.push(`![${base}](attachments/${filename})`);
       }
+      // Insert the Markdown first, then force a single complete save containing
+      // both the body reference and attachment metadata before Dropbox sees it.
+      insertAtCursor(snippets.join('\n\n'));
+      flushPendingSave();
       n.updated=now();
       persist();
-      insertAtCursor(snippets.join('\n\n'));
+      window.dispatchEvent(new CustomEvent('notes-attachment-added',{detail:{noteId:n.id,names:[...n.attachments]}}));
+      if(previewMode) await renderPreview();
       toast(images.length===1 ? 'Image added' : `${images.length} images added`);
     }catch(err){
       console.error('Image attachment failed',err);
@@ -1912,8 +1927,12 @@
     for(const img of imgs){
       const src=img.getAttribute('src')||'';
       if(src.startsWith('attachments/')){
-        const blob=await getAttachment(currentNote().id,src.slice('attachments/'.length));
+        const name=attachmentNameFromMarkdownSrc(src);
+        let blob=await getAttachment(currentNote().id,name);
+        // Compatibility with v39/v40 notes whose Markdown renderer encoded spaces.
+        if(!blob && name!==src.slice('attachments/'.length)) blob=await getAttachment(currentNote().id,src.slice('attachments/'.length));
         if(blob){ const u=URL.createObjectURL(blob); objectUrls.push(u); img.src=u; }
+        else { img.alt=(img.alt||'Image')+' (attachment unavailable)'; img.classList.add('missing-attachment'); }
       }
       img.loading='lazy';
     }

@@ -213,16 +213,19 @@
 
   function remoteBodyFor(note,path){
     const relAssetDir=relativeDropboxPath(dirname(path),assetsDirForNote(note));
-    return String(note.body||'').replace(/(\]\()attachments\/([^\)]+)(\))/g,(_,a,name,z)=>`${a}${relAssetDir}/${name}${z}`);
+    return String(note.body||'').replace(/(\]\()attachments\/([^\)]+)(\))/g,(_,a,name,z)=>{
+      let decoded=name; try{ decoded=decodeURIComponent(name); }catch{}
+      return `${a}${relAssetDir}/${encodeURIComponent(decoded)}${z}`;
+    });
   }
   function localBodyFromRemote(body,path,noteId){
     let out=String(body||'');
     // Current grouped-asset layout.
     const relAssetDir=relativeDropboxPath(dirname(path),assetsDirForNote(noteId)).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
-    out=out.replace(new RegExp(`(\\]\\()${relAssetDir}\\/([^\\)]+)(\\))`,'g'),'$1attachments/$2$3');
+    out=out.replace(new RegExp(`(\\]\\()${relAssetDir}\\/([^\\)]+)(\\))`,'g'),(_,a,name,z)=>{ let decoded=name; try{ decoded=decodeURIComponent(name); }catch{} return `${a}attachments/${decoded}${z}`; });
     // Legacy v39 sibling .assets layout, so existing Dropbox notes still import cleanly.
     const legacyBase=basenameNoExt(path).replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\.assets';
-    out=out.replace(new RegExp(`(\\]\\()${legacyBase}\\/([^\\)]+)(\\))`,'g'),'$1attachments/$2$3');
+    out=out.replace(new RegExp(`(\\]\\()${legacyBase}\\/([^\\)]+)(\\))`,'g'),(_,a,name,z)=>{ let decoded=name; try{ decoded=decodeURIComponent(name); }catch{} return `${a}attachments/${decoded}${z}`; });
     return out;
   }
   function serializeNote(state,note,path){
@@ -304,7 +307,7 @@
     if(oldEntry?.path && oldEntry.path!==path){
       await removeRemote(oldEntry.path);
     }
-    return {id:note.id,path,updated:note.updated||now(),created:note.created||now()};
+    return {id:note.id,path,updated:note.updated||now(),created:note.created||now(),attachments:[...(note.attachments||[])]};
   }
 
   async function readIndex(){
@@ -378,8 +381,11 @@
         const desired=desiredNotePath(local,note);
         const localNewer=!old || dateMs(note.updated)>dateMs(old.updated);
         const pathChanged=!!old && old.path!==desired;
-        if(localNewer||pathChanged){ finalEntries.push(await uploadLocalNote(local,note,old)); }
-        else finalEntries.push({id:old.id,path:old.path,updated:old.updated,created:old.created||note.created});
+        const localAttachments=[...(note.attachments||[])].sort();
+        const remoteAttachments=Array.isArray(old?.attachments)?[...old.attachments].sort():[];
+        const attachmentsChanged=localAttachments.join('\u0000')!==remoteAttachments.join('\u0000');
+        if(localNewer||pathChanged||attachmentsChanged){ finalEntries.push(await uploadLocalNote(local,note,old)); }
+        else finalEntries.push({id:old.id,path:old.path,updated:old.updated,created:old.created||note.created,attachments:localAttachments});
       }
       const finalIds=new Set(finalEntries.map(e=>e.id));
       for(const [id,old] of remoteEntries){
@@ -420,6 +426,7 @@
   els.syncNowButton?.addEventListener('click',()=>syncWithDropbox({announce:true}));
   els.disconnectDropboxButton?.addEventListener('click',disconnectDropbox);
   window.addEventListener('notes-local-save',scheduleSync);
+  window.addEventListener('notes-attachment-added',scheduleSync);
   window.addEventListener('focus',()=>{ if(dbx.connected) syncWithDropbox(); });
   document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&dbx.connected) syncWithDropbox(); });
 
