@@ -21,6 +21,7 @@
   let syncing = false;
   let syncAgain = false;
   let suppressLocalSave = false;
+  let mainSyncState = dbx.connected ? (dbx.lastSync ? 'synced' : 'connected') : 'disconnected';
 
   function bridge(){ return window.NotesBridge; }
   function clone(v){ return typeof structuredClone === 'function' ? structuredClone(v) : JSON.parse(JSON.stringify(v)); }
@@ -45,6 +46,11 @@
     if(ms<86400000) return `Synced ${Math.floor(ms/3600000)}h ago`;
     return `Synced ${Math.floor(ms/86400000)}d ago`;
   }
+  function publishMainStatus(state=mainSyncState){
+    mainSyncState=state;
+    window.NotesDropboxStatus={connected:!!dbx.connected,state:mainSyncState,lastSync:dbx.lastSync||null};
+    window.dispatchEvent(new CustomEvent('notes-dropbox-status',{detail:window.NotesDropboxStatus}));
+  }
   function updateUI(){
     if(els.redirectUriText) els.redirectUriText.textContent=redirectUri();
     if(els.dropboxAppKey) els.dropboxAppKey.value=dbx.appKey||'';
@@ -57,6 +63,8 @@
       els.settingsBtn.classList.toggle('dropbox-connected',connected);
       els.settingsBtn.title=connected?'Settings · Dropbox connected':'Settings';
     }
+    if(!connected) mainSyncState='disconnected';
+    publishMainStatus(mainSyncState);
   }
   function setSyncLabel(text){
     if(els.dropboxLastSync) els.dropboxLastSync.textContent=text;
@@ -73,7 +81,7 @@
   async function connectDropbox(){
     const appKey=els.dropboxAppKey?.value.trim();
     if(!appKey){ toast('Paste your Dropbox App Key first'); return; }
-    dbx.appKey=appKey; saveDropbox();
+    dbx.appKey=appKey; mainSyncState='connecting'; saveDropbox(); publishMainStatus('connecting');
     const verifier=randomString(64);
     const challenge=base64Url(await sha256(verifier));
     const stateValue=randomString(24);
@@ -112,7 +120,7 @@
       saveDropbox(); localStorage.removeItem(PKCE_KEY); history.replaceState({},'',redirectUri());
       await syncWithDropbox({announce:true});
     }catch(err){
-      console.error(err); history.replaceState({},'',redirectUri()); dbx.connected=false; saveDropbox(); setSyncLabel('Connection failed'); toast('Could not connect Dropbox. Check the app key and redirect URI.');
+      console.error(err); history.replaceState({},'',redirectUri()); dbx.connected=false; mainSyncState='disconnected'; saveDropbox(); setSyncLabel('Connection failed'); publishMainStatus('disconnected'); toast('Could not connect Dropbox. Check the app key and redirect URI.');
     }
     return true;
   }
@@ -274,14 +282,14 @@
 
   function scheduleSync(){
     if(!dbx.connected||suppressLocalSave) return;
-    clearTimeout(syncTimer); setSyncLabel('Saving to Dropbox…');
+    clearTimeout(syncTimer); setSyncLabel('Saving to Dropbox…'); publishMainStatus('syncing');
     syncTimer=setTimeout(()=>syncWithDropbox(),SYNC_DELAY);
   }
 
   async function syncWithDropbox({announce=false}={}){
     if(!dbx.connected||!bridge()) return;
     if(syncing){ syncAgain=true; return; }
-    syncing=true; syncAgain=false; clearTimeout(syncTimer); setSyncLabel('Syncing…');
+    syncing=true; syncAgain=false; clearTimeout(syncTimer); setSyncLabel('Syncing…'); publishMainStatus('syncing');
     try{
       bridge().flushPendingSave();
       let local=bridge().getState();
@@ -341,10 +349,10 @@
         if(tomb){ await removeRemote(old.path); await removeRemote(assetsDirForPath(old.path)); }
       }
       await writeIndex(local,finalEntries,tombstones);
-      dbx.lastSync=now(); saveDropbox(); setSyncLabel(relativeTime(dbx.lastSync));
+      dbx.lastSync=now(); mainSyncState='synced'; saveDropbox(); setSyncLabel(relativeTime(dbx.lastSync)); publishMainStatus('synced');
       if(announce) toast('Dropbox connected and synced');
     }catch(err){
-      console.error('Notes Dropbox sync',err); setSyncLabel('Sync problem · local copy is safe'); toast('Dropbox sync failed. Your notes are still saved on this device.');
+      console.error('Notes Dropbox sync',err); setSyncLabel('Sync problem · local copy is safe'); publishMainStatus('offline'); toast('Dropbox sync failed. Your notes are still saved on this device.');
     }finally{
       suppressLocalSave=false; syncing=false;
       if(syncAgain){ syncAgain=false; scheduleSync(); }
@@ -353,7 +361,7 @@
 
   function disconnectDropbox(){
     if(!confirm('Disconnect Dropbox on this device? Your local notes will remain.')) return;
-    const appKey=dbx.appKey||''; dbx={connected:false,appKey}; saveDropbox(); setSyncLabel(''); toast('Dropbox disconnected');
+    const appKey=dbx.appKey||''; dbx={connected:false,appKey}; mainSyncState='disconnected'; saveDropbox(); setSyncLabel(''); publishMainStatus('disconnected'); toast('Dropbox disconnected');
   }
 
   function openSettings(){ updateUI(); els.settingsDialog?.showModal?.(); }

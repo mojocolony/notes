@@ -428,16 +428,29 @@
     persist();
   }
 
+  function composedSaveStatus(localText='Saved locally'){
+    if(localText!=='Saved locally') return localText;
+    const dropbox=window.NotesDropboxStatus;
+    if(!dropbox?.connected) return localText;
+    if(dropbox.state==='syncing' || dropbox.state==='connecting') return 'Saved locally · Syncing…';
+    if(dropbox.state==='offline') return 'Saved locally · Dropbox offline';
+    if(dropbox.state==='synced') return 'Saved locally · Dropbox synced';
+    return 'Saved locally · Dropbox connected';
+  }
+  function setSaveStatus(localText='Saved locally'){
+    els.saveStatus.textContent=composedSaveStatus(localText);
+  }
+
   function persist(){
     state.selectedId = selectedId;
     state.savedAt = now();
     try{
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       localStateValid=true; primarySaveOk=true;
-      els.saveStatus.textContent = 'Saved locally';
+      setSaveStatus('Saved locally');
     }catch{
       primarySaveOk=false;
-      els.saveStatus.textContent = 'Saving to recovery storage…';
+      setSaveStatus('Saving to recovery storage…');
     }
     scheduleStateMirror();
     window.dispatchEvent(new CustomEvent('notes-local-save'));
@@ -447,7 +460,7 @@
     mirrorTimer=setTimeout(async()=>{
       try{
         await saveStateMirror(state);
-        if(els.saveStatus.textContent!=='Saving…') els.saveStatus.textContent=primarySaveOk?'Saved locally':'Saved to recovery storage';
+        if(els.saveStatus.textContent!=='Saving…') setSaveStatus(primarySaveOk?'Saved locally':'Saved to recovery storage');
       }catch{
         // localStorage is still the immediate save; the recovery mirror is a second layer.
       }
@@ -1849,6 +1862,10 @@
     }
     if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='n'){e.preventDefault();newNote();}
     if(e.key==='Escape'&&els.sidebar.classList.contains('open'))closeSidebar();
+  });
+  window.addEventListener('notes-dropbox-status',()=>{
+    if(saveTimer) return;
+    setSaveStatus(primarySaveOk?'Saved locally':'Saved to recovery storage');
   });
   window.addEventListener('beforeunload',()=>{ flushPendingSave(); releaseObjectUrls(); });
 
