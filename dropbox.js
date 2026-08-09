@@ -286,10 +286,14 @@
       bridge().flushPendingSave();
       let local=bridge().getState();
       const remote=await readIndex();
+      let needsApply=false;
       const freshPlaceholder=!!(remote?.notes?.length && local.notes?.length===1 && isPristinePlaceholder(local.notes[0]) && !(local.folders||[]).length);
-      if(freshPlaceholder){ local.notes=[]; local.savedAt='1970-01-01T00:00:00.000Z'; }
+      if(freshPlaceholder){ local.notes=[]; local.savedAt='1970-01-01T00:00:00.000Z'; needsApply=true; }
+      const remoteConfigIsNewer=!!(remote?.config && dateMs(remote.config.savedAt)>dateMs(local.savedAt));
       local=mergeConfig(local,remote?.config);
+      if(remoteConfigIsNewer) needsApply=true;
       const tombstones=latestTombstones(local.deletedNotes,remote?.deletedNotes);
+      if(JSON.stringify(tombstones)!==JSON.stringify(local.deletedNotes||[])) needsApply=true;
       const tombById=new Map(tombstones.map(d=>[d.id,d]));
       const localById=new Map((local.notes||[]).map(n=>[n.id,n]));
       const remoteEntries=new Map((remote?.notes||[]).map(e=>[e.id,e]));
@@ -301,21 +305,25 @@
         const current=localById.get(id);
         if(!current || dateMs(entry.updated)>dateMs(current.updated)){
           const note=await downloadRemoteNote(entry,current);
-          if(note) localById.set(id,note);
+          if(note){ localById.set(id,note); needsApply=true; }
         }
       }
       for(const [id,note] of [...localById]){
         const tomb=tombById.get(id);
-        if(tomb && dateMs(tomb.deletedAt)>=dateMs(note.updated)) localById.delete(id);
+        if(tomb && dateMs(tomb.deletedAt)>=dateMs(note.updated)){ localById.delete(id); needsApply=true; }
       }
       local.notes=[...localById.values()]; local.deletedNotes=tombstones;
       if(local.selectedId && !localById.has(local.selectedId)) local.selectedId=local.notes[0]?.id||null;
 
-      // Apply merged local state before uploads so the UI immediately reflects remote changes.
-      suppressLocalSave=true;
-      bridge().applyState(local);
-      suppressLocalSave=false;
-      local=bridge().getState();
+      // Routine local saves only need to upload in the background. Re-render
+      // Notes solely when Dropbox actually supplied newer state; otherwise the
+      // editor (and its caret) is left completely untouched.
+      if(needsApply){
+        suppressLocalSave=true;
+        bridge().applyState(local);
+        suppressLocalSave=false;
+        local=bridge().getState();
+      }
 
       const finalEntries=[];
       for(const note of local.notes){

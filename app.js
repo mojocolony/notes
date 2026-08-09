@@ -1858,12 +1858,38 @@
     getState(){ flushPendingSave(); return JSON.parse(JSON.stringify(state)); },
     applyState(nextState){
       flushPendingSave();
+      // Dropbox may occasionally need to apply genuinely newer remote data.
+      // Preserve the live editor view so a background sync never kicks the
+      // caret back to the beginning of the note.
+      const previousSelectedId=selectedId;
+      const hadEditorFocus=editorHasFocus();
+      let cmSelections=null, cmScroll=null, taSelection=null, taScrollTop=0;
+      if(cmEditor){
+        try{ cmSelections=cmEditor.listSelections().map(s=>({anchor:{...s.anchor},head:{...s.head}})); }catch{}
+        try{ const si=cmEditor.getScrollInfo(); cmScroll={left:si.left,top:si.top}; }catch{}
+      }else if(els.editor){
+        taSelection={start:els.editor.selectionStart,end:els.editor.selectionEnd,direction:els.editor.selectionDirection};
+        taScrollTop=els.editor.scrollTop;
+      }
+
       state=normalizeState(nextState);
       selectedId=state.selectedId||state.notes[0]?.id||null;
       if(selectedId && !state.notes.some(n=>n.id===selectedId)) selectedId=state.notes[0]?.id||null;
       applyWritingPreferences();
       persist();
       renderAll();
+
+      if(previousSelectedId===selectedId){
+        if(cmEditor && cmSelections){
+          try{ cmEditor.setSelections(cmSelections); }catch{}
+          if(cmScroll) try{ cmEditor.scrollTo(cmScroll.left,cmScroll.top); }catch{}
+          if(hadEditorFocus) try{ cmEditor.focus(); }catch{}
+        }else if(!cmEditor && els.editor && taSelection){
+          try{ els.editor.setSelectionRange(taSelection.start,taSelection.end,taSelection.direction||'none'); }catch{}
+          els.editor.scrollTop=taScrollTop;
+          if(hadEditorFocus) els.editor.focus();
+        }
+      }
     },
     getAttachment,
     putAttachment,

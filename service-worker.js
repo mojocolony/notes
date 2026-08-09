@@ -1,4 +1,4 @@
-const CACHE='notes-v28';
+const CACHE='notes-v29';
 const ASSETS=['./','./index.html','./styles.css?v=28','./app.js?v=28','./dropbox.js?v=1','./manifest.webmanifest','./icon-192.png','./icon-512.png'];
 
 self.addEventListener('install',e=>e.waitUntil(
