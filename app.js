@@ -34,7 +34,7 @@
     folderList: $('folderList'), addFolderBtn: $('addFolderBtn'), folderDialog: $('folderDialog'), folderForm: $('folderForm'), folderNameInput: $('folderNameInput'), folderSaveBtn: $('folderSaveBtn'),
     tagList: $('tagList'), tagsToggleBtn: $('tagsToggleBtn'), tagsChevron: $('tagsChevron'), tagSortSelect: $('tagSortSelect'), addTagGroupBtn: $('addTagGroupBtn'), manageTagsBtn: $('manageTagsBtn'), tagManagerDialog: $('tagManagerDialog'), tagManagerGroups: $('tagManagerGroups'), tagManagerList: $('tagManagerList'), tagManagerNewGroupBtn: $('tagManagerNewGroupBtn'), tagManagerCloseBtn: $('tagManagerCloseBtn'), tagManagerCloseX: $('tagManagerCloseX'),
     viewTitle: $('viewTitle'), viewSubtitle: $('viewSubtitle'), sortSelect: $('sortSelect'), inboxCount: $('inboxCount'), pinnedCount: $('pinnedCount'), archiveCount: $('archiveCount'), trashCount: $('trashCount'),
-    noteTitle: $('noteTitle'), saveStatus: $('saveStatus'), folderSelect: $('folderSelect'), tagsInput: $('tagsInput'), editor: $('editor'), preview: $('preview'), reorderPanel: $('reorderPanel'), blocksList: $('blocksList'),
+    noteTitle: $('noteTitle'), saveStatus: $('saveStatus'), folderSelect: $('folderSelect'), tagsInput: $('tagsInput'), editor: $('editor'), editorArea: $('editorArea'), preview: $('preview'), reorderPanel: $('reorderPanel'), blocksList: $('blocksList'),
     previewBtn: $('previewBtn'), reorderBtn: $('reorderBtn'), reorderDone: $('reorderDone'), toolbar: $('toolbar'), imageInput: $('imageInput'), pinBtn: $('pinBtn'), historyBtn: $('historyBtn'), shareBtn: $('shareBtn'), downloadBtn: $('downloadBtn'), archiveBtn: $('archiveBtn'), deleteBtn: $('deleteBtn'),
     writingSettingsBtn: $('writingSettingsBtn'), writingSettingsDialog: $('writingSettingsDialog'), writingSettingsForm: $('writingSettingsForm'), fontSelect: $('fontSelect'), fontSizeSelect: $('fontSizeSelect'), fontSample: $('fontSample'),
     backupBtn: $('backupBtn'), restoreBtn: $('restoreBtn'), restoreInput: $('restoreInput'),
@@ -1830,13 +1830,55 @@
     const ta=els.editor; ta.setRangeText(text,ta.selectionStart,ta.selectionEnd,'end'); scheduleSave(); ta.focus();
   }
 
-  async function handleImage(file){
-    if(!file) return; const n=currentNote(); if(!n)return;
-    const ext=(file.name.split('.').pop()||'jpg').toLowerCase(); const base=safeFilename(file.name.replace(/\.[^.]+$/,'')); const filename=`${base}-${crypto.randomUUID().slice(0,6)}.${ext}`;
-    await putAttachment(n.id,filename,file);
-    n.attachments ||= []; n.attachments.push(filename); n.updated=now(); persist();
-    insertAtCursor(`![${base}](attachments/${filename})`); toast('Image added');
+  function imageExtension(file){
+    const fromName=(String(file?.name||'').match(/\.([a-zA-Z0-9]{2,5})$/)||[])[1];
+    if(fromName) return fromName.toLowerCase()==='jpeg' ? 'jpg' : fromName.toLowerCase();
+    const byType={
+      'image/jpeg':'jpg','image/png':'png','image/gif':'gif','image/webp':'webp',
+      'image/heic':'heic','image/heif':'heif','image/svg+xml':'svg','image/avif':'avif'
+    };
+    return byType[String(file?.type||'').toLowerCase()]||'png';
   }
+  function imageBaseName(file){
+    const raw=String(file?.name||'').replace(/\.[^.]+$/,'').trim();
+    return safeFilename(raw && !/^image$/i.test(raw) ? raw : 'image');
+  }
+  function imageFilesFromTransfer(source){
+    const files=[];
+    for(const file of Array.from(source?.files||[])) if(String(file.type||'').startsWith('image/')) files.push(file);
+    if(files.length) return files;
+    for(const item of Array.from(source?.items||[])){
+      if(item.kind==='file' && String(item.type||'').startsWith('image/')){
+        const file=item.getAsFile?.(); if(file) files.push(file);
+      }
+    }
+    return files;
+  }
+  async function handleImages(files){
+    const images=Array.from(files||[]).filter(file=>file && String(file.type||'').startsWith('image/'));
+    if(!images.length) return;
+    const n=currentNote(); if(!n) return;
+    const snippets=[];
+    try{
+      for(const file of images){
+        const ext=imageExtension(file);
+        const base=imageBaseName(file);
+        const filename=`${base}-${crypto.randomUUID().slice(0,6)}.${ext}`;
+        await putAttachment(n.id,filename,file);
+        n.attachments ||= [];
+        if(!n.attachments.includes(filename)) n.attachments.push(filename);
+        snippets.push(`![${base}](attachments/${filename})`);
+      }
+      n.updated=now();
+      persist();
+      insertAtCursor(snippets.join('\n\n'));
+      toast(images.length===1 ? 'Image added' : `${images.length} images added`);
+    }catch(err){
+      console.error('Image attachment failed',err);
+      toast('That image could not be added');
+    }
+  }
+  async function handleImage(file){ return handleImages(file?[file]:[]); }
 
   function exitModes(){ previewMode=false; reorderMode=false; els.preview.hidden=true; els.reorderPanel.hidden=true; showEditor(true); els.previewBtn.classList.remove('active'); els.reorderBtn.classList.remove('active'); if(cmEditor) cmEditor.refresh(); }
   async function togglePreview(){
@@ -2138,7 +2180,42 @@
   els.tagsInput.addEventListener('change',()=>{ const n=currentNote(); if(!n)return; n.tags=dedupeTags(els.tagsInput.value.split(',')); cleanTagOrganization(); els.tagsInput.value=n.tags.join(', '); n.updated=now(); persist(); queueAutoSnapshot(n); if(currentTag && !(n.tags||[]).some(t=>tagKey(t)===tagKey(currentTag))){ const remaining=notesWithTag(currentTag); if(remaining.length) selectedId=remaining[0].id; else { currentTag=null; currentView='inbox'; currentFolder=null; } renderAll(); return; } renderSidebar(); renderNotesList(); });
   els.folderSelect.addEventListener('change',()=>{ flushPendingSave(); const n=currentNote(); if(!n)return; moveNoteToFolder(n,els.folderSelect.value||null); persist(); renderAll(); });
   els.toolbar.addEventListener('click',e=>{ const b=e.target.closest('button[data-action]'); if(b) toolbarAction(b.dataset.action); });
-  els.imageInput.addEventListener('change',()=>{ handleImage(els.imageInput.files?.[0]); els.imageInput.value=''; });
+  els.imageInput.addEventListener('change',()=>{ handleImages(els.imageInput.files); els.imageInput.value=''; });
+  // Images can also be pasted or dropped directly into any existing note.
+  // They are stored as real attachments and the editor receives ordinary
+  // Markdown: ![alt text](attachments/filename.ext)
+  els.editorArea?.addEventListener('paste',e=>{
+    const images=imageFilesFromTransfer(e.clipboardData);
+    if(!images.length) return;
+    e.preventDefault();
+    e.stopPropagation();
+    handleImages(images);
+  },true);
+  let imageDragDepth=0;
+  els.editorArea?.addEventListener('dragenter',e=>{
+    if(!Array.from(e.dataTransfer?.types||[]).includes('Files')) return;
+    imageDragDepth++;
+    els.editorArea.classList.add('image-drag-over');
+  });
+  els.editorArea?.addEventListener('dragover',e=>{
+    if(!Array.from(e.dataTransfer?.types||[]).includes('Files')) return;
+    e.preventDefault();
+    if(e.dataTransfer) e.dataTransfer.dropEffect='copy';
+    els.editorArea.classList.add('image-drag-over');
+  });
+  els.editorArea?.addEventListener('dragleave',()=>{
+    imageDragDepth=Math.max(0,imageDragDepth-1);
+    if(!imageDragDepth) els.editorArea.classList.remove('image-drag-over');
+  });
+  els.editorArea?.addEventListener('drop',e=>{
+    imageDragDepth=0;
+    els.editorArea.classList.remove('image-drag-over');
+    const images=imageFilesFromTransfer(e.dataTransfer);
+    if(!images.length) return;
+    e.preventDefault();
+    e.stopPropagation();
+    handleImages(images);
+  },true);
   els.writingSettingsBtn.addEventListener('click',openWritingSettings);
   els.fontSelect.addEventListener('change',saveWritingPreference);
   els.fontSizeSelect.addEventListener('change',saveWritingPreference);

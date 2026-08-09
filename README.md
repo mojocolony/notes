@@ -44,3 +44,8 @@ Folders can be dragged onto other folders to create subfolders. Drag a subfolder
 ## Web clipper bookmarklet
 
 Open **Settings → Web Clipper** in the hosted app and drag **Save to Notes** to the browser bookmarks bar. When used on a webpage, it opens Notes with the page title, URL, and any selected text. You can create a new note or append/prepend the clip to an existing note.
+
+
+## Image attachments
+
+Images pasted, dropped, or chosen in Notes are stored locally as attachments and synced to Dropbox under a single tidy `Notes/_assets/` folder. Each note gets a stable subfolder named from its note ID, so moving or renaming the note does not move its images. Notes created with the earlier sibling `.assets` layout are still read and are migrated to `_assets` on the next upload.

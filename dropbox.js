@@ -193,15 +193,37 @@
   function desiredNotePath(state,note){ return `${noteDirectory(state,note)}/${safeSegment(bridge()?.displayTitle?.(note)||'Untitled',64)}--${idSuffix(note.id)}.md`; }
   function dirname(path){ return path.slice(0,path.lastIndexOf('/'))||'/'; }
   function basenameNoExt(path){ const b=path.slice(path.lastIndexOf('/')+1); return b.replace(/\.md$/i,''); }
-  function assetsDirForPath(path){ return `${dirname(path)}/${basenameNoExt(path)}.assets`; }
+  // v40+: keep every note's image files under one tidy top-level _assets folder.
+  // A stable note-id subfolder means moving/renaming the Markdown file never moves its images.
+  function assetKey(noteOrId){
+    const raw=typeof noteOrId==='object'?noteOrId?.id:noteOrId;
+    return safeSegment(String(raw||'note').replace(/^n-/,''),100);
+  }
+  function assetsDirForNote(noteOrId){ return `${ROOT}/_assets/${assetKey(noteOrId)}`; }
+  // v39 compatibility: older builds created a sibling "Note name.assets" folder.
+  function legacyAssetsDirForPath(path){ return `${dirname(path)}/${basenameNoExt(path)}.assets`; }
+  function relativeDropboxPath(fromDir,toPath){
+    const from=String(fromDir||'/').split('/').filter(Boolean);
+    const to=String(toPath||'/').split('/').filter(Boolean);
+    let common=0;
+    while(common<from.length && common<to.length && from[common]===to[common]) common++;
+    const up=Array(Math.max(0,from.length-common)).fill('..');
+    return [...up,...to.slice(common)].join('/')||'.';
+  }
 
   function remoteBodyFor(note,path){
-    const assetBase=`${basenameNoExt(path)}.assets`;
-    return String(note.body||'').replace(/(\]\()attachments\/([^\)]+)(\))/g,(_,a,name,z)=>`${a}${assetBase}/${name}${z}`);
+    const relAssetDir=relativeDropboxPath(dirname(path),assetsDirForNote(note));
+    return String(note.body||'').replace(/(\]\()attachments\/([^\)]+)(\))/g,(_,a,name,z)=>`${a}${relAssetDir}/${name}${z}`);
   }
-  function localBodyFromRemote(body,path){
-    const assetBase=basenameNoExt(path).replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\.assets';
-    return String(body||'').replace(new RegExp(`(\\]\\()${assetBase}\\/([^\\)]+)(\\))`,'g'),'$1attachments/$2$3');
+  function localBodyFromRemote(body,path,noteId){
+    let out=String(body||'');
+    // Current grouped-asset layout.
+    const relAssetDir=relativeDropboxPath(dirname(path),assetsDirForNote(noteId)).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+    out=out.replace(new RegExp(`(\\]\\()${relAssetDir}\\/([^\\)]+)(\\))`,'g'),'$1attachments/$2$3');
+    // Legacy v39 sibling .assets layout, so existing Dropbox notes still import cleanly.
+    const legacyBase=basenameNoExt(path).replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\.assets';
+    out=out.replace(new RegExp(`(\\]\\()${legacyBase}\\/([^\\)]+)(\\))`,'g'),'$1attachments/$2$3');
+    return out;
   }
   function serializeNote(state,note,path){
     const meta={
@@ -227,9 +249,10 @@
         try{ meta[m[1]]=JSON.parse(m[2]); }catch{ meta[m[1]]=m[2]; }
       }
     }
-    const body=localBodyFromRemote(lines.slice(bodyStart).join('\n'),path);
+    const noteId=String(meta.id||`n-${crypto.randomUUID()}`);
+    const body=localBodyFromRemote(lines.slice(bodyStart).join('\n'),path,noteId);
     return {
-      id:String(meta.id||`n-${crypto.randomUUID()}`), body,
+      id:noteId, body,
       customTitle:Object.prototype.hasOwnProperty.call(meta,'customTitle') ? (typeof meta.customTitle==='string'?meta.customTitle:null) : (typeof meta.title==='string'?meta.title:null),
       tags:Array.isArray(meta.tags)?meta.tags:[], folderId:meta.folderId||null,
       pinned:!!meta.pinned, archived:!!meta.archived, trashed:!!meta.trashed, deletedAt:meta.deletedAt||null,
@@ -258,9 +281,12 @@
     const text=await download(entry.path,'text'); if(text==null) return null;
     const note=parseNote(text,entry.path);
     if(localExisting) await bridge().deleteAttachments(localExisting).catch(()=>{});
-    const assetDir=assetsDirForPath(entry.path);
+    const assetDir=assetsDirForNote(note);
+    const legacyAssetDir=legacyAssetsDirForPath(entry.path);
     for(const name of (note.attachments||[])){
-      const blob=await download(`${assetDir}/${safeSegment(name,100)}`,'blob');
+      const safeName=safeSegment(name,100);
+      let blob=await download(`${assetDir}/${safeName}`,'blob');
+      if(!blob) blob=await download(`${legacyAssetDir}/${safeName}`,'blob');
       if(blob) await bridge().putAttachment(note.id,name,blob);
     }
     return note;
@@ -268,14 +294,15 @@
   async function uploadLocalNote(state,note,oldEntry){
     const path=desiredNotePath(state,note); await ensureFolder(dirname(path));
     await upload(path,serializeNote(state,note,path));
-    const assetDir=assetsDirForPath(path);
+    const assetDir=assetsDirForNote(note);
     if((note.attachments||[]).length){
       await ensureFolder(assetDir);
       for(const name of note.attachments){ const blob=await bridge().getAttachment(note.id,name); if(blob) await upload(`${assetDir}/${safeSegment(name,100)}`,blob); }
     }
+    // Once the grouped copy is safely written, clean up the old v39 sibling asset folder.
+    if(oldEntry?.path) await removeRemote(legacyAssetsDirForPath(oldEntry.path));
     if(oldEntry?.path && oldEntry.path!==path){
       await removeRemote(oldEntry.path);
-      await removeRemote(assetsDirForPath(oldEntry.path));
     }
     return {id:note.id,path,updated:note.updated||now(),created:note.created||now()};
   }
@@ -358,7 +385,11 @@
       for(const [id,old] of remoteEntries){
         if(finalIds.has(id)) continue;
         const tomb=tombById.get(id);
-        if(tomb){ await removeRemote(old.path); await removeRemote(assetsDirForPath(old.path)); }
+        if(tomb){
+          await removeRemote(old.path);
+          await removeRemote(assetsDirForNote(id));
+          await removeRemote(legacyAssetsDirForPath(old.path));
+        }
       }
       await writeIndex(local,finalEntries,tombstones);
       dbx.lastSync=now(); mainSyncState='synced'; saveDropbox(); setSyncLabel(relativeTime(dbx.lastSync)); publishMainStatus('synced');
