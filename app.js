@@ -1,5 +1,8 @@
 (() => {
   const STORAGE_KEY = 'notes_app_state_v1';
+  const LAYOUT_KEY = 'notes_layout_widths_v1';
+  const LAYOUT_DEFAULTS = { sidebar: 220, list: 285 };
+  const LAYOUT_LIMITS = { sidebarMin: 170, sidebarMax: 380, listMin: 220, listMax: 520, editorMin: 360 };
   const DB_NAME = 'notes_app_attachments';
   const DB_VERSION = 2;
   const ATT_STORE = 'attachments';
@@ -26,7 +29,7 @@
   };
 
   const els = {
-    sidebar: $('sidebar'), scrim: $('scrim'), sidebarOpen: $('sidebarOpen'), sidebarClose: $('sidebarClose'),
+    sidebar: $('sidebar'), scrim: $('scrim'), sidebarOpen: $('sidebarOpen'), sidebarClose: $('sidebarClose'), sidebarResizer: $('sidebarResizer'), listResizer: $('listResizer'),
     newNoteBtn: $('newNoteBtn'), newNoteMobile: $('newNoteMobile'), searchInput: $('searchInput'), notesList: $('notesList'), inboxDropZone: $('inboxDropZone'),
     folderList: $('folderList'), addFolderBtn: $('addFolderBtn'), folderDialog: $('folderDialog'), folderForm: $('folderForm'), folderNameInput: $('folderNameInput'), folderSaveBtn: $('folderSaveBtn'),
     tagList: $('tagList'), tagsToggleBtn: $('tagsToggleBtn'), tagsChevron: $('tagsChevron'), tagSortSelect: $('tagSortSelect'), addTagGroupBtn: $('addTagGroupBtn'), manageTagsBtn: $('manageTagsBtn'), tagManagerDialog: $('tagManagerDialog'), tagManagerGroups: $('tagManagerGroups'), tagManagerList: $('tagManagerList'), tagManagerNewGroupBtn: $('tagManagerNewGroupBtn'), tagManagerCloseBtn: $('tagManagerCloseBtn'), tagManagerCloseX: $('tagManagerCloseX'),
@@ -95,6 +98,93 @@
     scheduleLiveLinkRefresh();
   }
   applyWritingPreferences();
+
+  let layoutWidths = loadLayoutWidths();
+
+  function clampNumber(value,min,max){ return Math.min(max,Math.max(min,value)); }
+  function loadLayoutWidths(){
+    try{
+      const raw=JSON.parse(localStorage.getItem(LAYOUT_KEY)||'{}');
+      return {
+        sidebar: Number.isFinite(Number(raw.sidebar)) ? Number(raw.sidebar) : LAYOUT_DEFAULTS.sidebar,
+        list: Number.isFinite(Number(raw.list)) ? Number(raw.list) : LAYOUT_DEFAULTS.list
+      };
+    }catch{ return {...LAYOUT_DEFAULTS}; }
+  }
+  function saveLayoutWidths(){
+    try{ localStorage.setItem(LAYOUT_KEY,JSON.stringify(layoutWidths)); }catch{}
+  }
+  function desktopLayoutActive(){ return window.matchMedia('(min-width: 901px)').matches; }
+  function clampLayoutToViewport(){
+    const shell=document.querySelector('.app-shell');
+    if(!shell) return;
+    const width=shell.getBoundingClientRect().width || window.innerWidth;
+    layoutWidths.sidebar=clampNumber(layoutWidths.sidebar,LAYOUT_LIMITS.sidebarMin,Math.min(LAYOUT_LIMITS.sidebarMax,Math.max(LAYOUT_LIMITS.sidebarMin,width-LAYOUT_LIMITS.listMin-LAYOUT_LIMITS.editorMin)));
+    layoutWidths.list=clampNumber(layoutWidths.list,LAYOUT_LIMITS.listMin,Math.min(LAYOUT_LIMITS.listMax,Math.max(LAYOUT_LIMITS.listMin,width-layoutWidths.sidebar-LAYOUT_LIMITS.editorMin)));
+  }
+  function applyLayoutWidths(){
+    const root=document.documentElement;
+    if(!desktopLayoutActive()){
+      root.style.removeProperty('--sidebar');
+      root.style.removeProperty('--list');
+      return;
+    }
+    clampLayoutToViewport();
+    root.style.setProperty('--sidebar',`${Math.round(layoutWidths.sidebar)}px`);
+    root.style.setProperty('--list',`${Math.round(layoutWidths.list)}px`);
+    if(cmEditor) requestAnimationFrame(()=>cmEditor.refresh());
+  }
+  function setupColumnResizers(){
+    const shell=document.querySelector('.app-shell');
+    if(!shell || !els.sidebarResizer || !els.listResizer) return;
+
+    const startDrag=(kind,event)=>{
+      if(!desktopLayoutActive() || event.button!==0) return;
+      event.preventDefault();
+      const resizer=kind==='sidebar'?els.sidebarResizer:els.listResizer;
+      resizer.classList.add('active');
+      document.body.classList.add('resizing-columns');
+      try{ resizer.setPointerCapture(event.pointerId); }catch{}
+
+      const move=(e)=>{
+        const rect=shell.getBoundingClientRect();
+        const x=e.clientX-rect.left;
+        if(kind==='sidebar'){
+          const maxSidebar=Math.min(LAYOUT_LIMITS.sidebarMax,rect.width-layoutWidths.list-LAYOUT_LIMITS.editorMin);
+          layoutWidths.sidebar=clampNumber(x,LAYOUT_LIMITS.sidebarMin,Math.max(LAYOUT_LIMITS.sidebarMin,maxSidebar));
+        }else{
+          const maxList=Math.min(LAYOUT_LIMITS.listMax,rect.width-layoutWidths.sidebar-LAYOUT_LIMITS.editorMin);
+          layoutWidths.list=clampNumber(x-layoutWidths.sidebar,LAYOUT_LIMITS.listMin,Math.max(LAYOUT_LIMITS.listMin,maxList));
+        }
+        applyLayoutWidths();
+      };
+      const end=(e)=>{
+        move(e);
+        resizer.classList.remove('active');
+        document.body.classList.remove('resizing-columns');
+        resizer.removeEventListener('pointermove',move);
+        resizer.removeEventListener('pointerup',end);
+        resizer.removeEventListener('pointercancel',end);
+        try{ resizer.releasePointerCapture(e.pointerId); }catch{}
+        saveLayoutWidths();
+      };
+      resizer.addEventListener('pointermove',move);
+      resizer.addEventListener('pointerup',end);
+      resizer.addEventListener('pointercancel',end);
+    };
+
+    els.sidebarResizer.addEventListener('pointerdown',e=>startDrag('sidebar',e));
+    els.listResizer.addEventListener('pointerdown',e=>startDrag('list',e));
+    els.sidebarResizer.addEventListener('dblclick',()=>{ layoutWidths.sidebar=LAYOUT_DEFAULTS.sidebar; applyLayoutWidths(); saveLayoutWidths(); });
+    els.listResizer.addEventListener('dblclick',()=>{ layoutWidths.list=LAYOUT_DEFAULTS.list; applyLayoutWidths(); saveLayoutWidths(); });
+
+    let resizeTimer=null;
+    window.addEventListener('resize',()=>{
+      clearTimeout(resizeTimer);
+      resizeTimer=setTimeout(()=>{ applyLayoutWidths(); if(desktopLayoutActive()) saveLayoutWidths(); },80);
+    });
+    applyLayoutWidths();
+  }
 
   function editorValue(){ return cmEditor ? cmEditor.getValue() : els.editor.value; }
   function setEditorValue(value){
@@ -2196,6 +2286,7 @@
   };
 
   async function initializeApp(){
+    setupColumnResizers();
     requestPersistentStorage();
     try{
       const mirror=await loadStateMirror();

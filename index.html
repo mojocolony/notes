@@ -6,11 +6,9 @@
   <meta name="theme-color" content="#f7f7f5">
   <title>Notes</title>
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="icon" href="favicon.ico" sizes="any">
-  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
   <link rel="apple-touch-icon" href="icon-192.png">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.min.css">
-  <link rel="stylesheet" href="styles.css?v=33">
+  <link rel="stylesheet" href="styles.css?v=34">
 </head>
 <body>
   <div class="app-shell">
@@ -66,6 +64,7 @@
     </aside>
 
     <div id="scrim" class="scrim"></div>
+    <div id="sidebarResizer" class="column-resizer sidebar-resizer" role="separator" aria-orientation="vertical" aria-label="Resize folders column" title="Drag to resize folders column. Double-click to reset."></div>
 
     <section class="notes-list-pane">
       <div class="list-pane-head">
@@ -90,6 +89,7 @@
       </div>
       <div id="notesList" class="notes-list"></div>
     </section>
+    <div id="listResizer" class="column-resizer list-resizer" role="separator" aria-orientation="vertical" aria-label="Resize note list column" title="Drag to resize note list. Double-click to reset."></div>
 
     <main class="editor-pane">
       <header class="editor-head">
@@ -370,7 +370,7 @@
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.4.7/dist/purify.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-  <script src="app.js?v=33"></script>
+  <script src="app.js?v=34"></script>
   <script src="dropbox.js?v=3"></script>
 </body>
 </html>
