@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#f7f7f5">
+  <title>Notes</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.min.css">
+  <link rel="stylesheet" href="styles.css?v=26">
+</head>
+<body>
+  <div class="app-shell">
+    <aside id="sidebar" class="sidebar" aria-label="Notes navigation">
+      <div class="sidebar-top">
+        <div class="brand-row">
+          <div class="brand">Notes</div>
+          <button id="sidebarClose" class="icon-btn mobile-only" aria-label="Close sidebar">×</button>
+        </div>
+        <button id="newNoteBtn" class="primary-btn full" title="New note (Q)">＋ New Note</button>
+        <label class="search-wrap">
+          <span>⌕</span>
+          <input id="searchInput" type="search" placeholder="Search all notes">
+        </label>
+      </div>
+
+      <nav class="nav-section">
+        <div id="inboxDropZone" class="inbox-drop-zone">
+          <button class="nav-item active" data-view="inbox"><span>Inbox</span><span id="inboxCount" class="count"></span></button>
+        </div>
+        <button class="nav-item" data-view="pinned"><span>Pinned</span><span id="pinnedCount" class="count"></span></button>
+        <button class="nav-item" data-view="archived"><span>Archive</span><span id="archiveCount" class="count"></span></button>
+        <button class="nav-item" data-view="trash"><span>Trash</span><span id="trashCount" class="count"></span></button>
+      </nav>
+
+      <div class="folders-head">
+        <span>Folders</span>
+        <button id="addFolderBtn" class="mini-btn" title="Add folder" aria-label="Add folder">＋</button>
+      </div>
+      <div id="folderList" class="folder-list"></div>
+
+      <div class="tags-head">
+        <button id="tagsToggleBtn" class="tags-toggle" type="button" aria-expanded="true" aria-controls="tagList" title="Collapse tags">
+          <span id="tagsChevron" class="section-chevron" aria-hidden="true">⌄</span>
+          <span>Tags</span>
+        </button>
+        <div class="tags-head-actions">
+          <select id="tagSortSelect" class="tag-sort-select" aria-label="Sort tags" title="Sort tags">
+            <option value="az">A–Z</option>
+            <option value="manual">Manual</option>
+          </select>
+          <button id="addTagGroupBtn" class="mini-btn tag-group-add-btn" title="New tag group" aria-label="New tag group">＋</button>
+          <button id="manageTagsBtn" class="mini-btn manage-tags-btn" title="Manage tags">Manage</button>
+        </div>
+      </div>
+      <div id="tagList" class="tag-list"></div>
+
+      <div class="sidebar-bottom">
+        <button id="backupBtn" class="text-btn">Export backup</button>
+        <button id="restoreBtn" class="text-btn">Import backup</button>
+        <input id="restoreInput" type="file" accept=".json,.zip,application/json,application/zip" hidden>
+      </div>
+    </aside>
+
+    <div id="scrim" class="scrim"></div>
+
+    <section class="notes-list-pane">
+      <div class="list-pane-head">
+        <button id="sidebarOpen" class="icon-btn mobile-only" aria-label="Open sidebar">☰</button>
+        <div class="list-head-copy">
+          <div id="viewTitle" class="view-title">Inbox</div>
+          <div id="viewSubtitle" class="view-subtitle"></div>
+        </div>
+        <label class="sort-control" title="Sort notes">
+          <span class="sr-only">Sort notes</span>
+          <select id="sortSelect" aria-label="Sort notes">
+            <option value="updated-desc">Modified: Newest</option>
+            <option value="updated-asc">Modified: Oldest</option>
+            <option value="created-desc">Created: Newest</option>
+            <option value="created-asc">Created: Oldest</option>
+            <option value="title-asc">Title: A–Z</option>
+            <option value="title-desc">Title: Z–A</option>
+            <option value="manual">Manual</option>
+          </select>
+        </label>
+        <button id="newNoteMobile" class="icon-btn mobile-only" aria-label="New note" title="New note (Q)">＋</button>
+      </div>
+      <div id="notesList" class="notes-list"></div>
+    </section>
+
+    <main class="editor-pane">
+      <header class="editor-head">
+        <div class="editor-head-main">
+          <input id="noteTitle" class="note-title" type="text" value="Untitled" aria-label="Note title" title="Edit note title" autocomplete="off" spellcheck="true">
+          <div id="saveStatus" class="save-status">Saved locally</div>
+        </div>
+        <div class="head-actions">
+          <button id="pinBtn" class="icon-btn" title="Pin note" aria-label="Pin note">☆</button>
+          <button id="historyBtn" class="icon-btn" title="Version history" aria-label="Version history">◴</button>
+          <button id="shareBtn" class="icon-btn" title="Share" aria-label="Share">↗</button>
+          <button id="downloadBtn" class="icon-btn" title="Download Markdown" aria-label="Download Markdown">⇩</button>
+          <button id="archiveBtn" class="icon-btn" title="Archive" aria-label="Archive">⌑</button>
+          <button id="deleteBtn" class="icon-btn danger" title="Delete" aria-label="Delete">⌫</button>
+        </div>
+      </header>
+
+      <div class="meta-row">
+        <label class="meta-field">Folder
+          <select id="folderSelect"></select>
+        </label>
+        <label class="meta-field grow">Tags
+          <input id="tagsInput" type="text" placeholder="ideas, school, personal">
+        </label>
+      </div>
+
+      <div class="toolbar-wrap">
+        <div id="toolbar" class="toolbar" aria-label="Markdown formatting toolbar">
+          <button data-action="checkbox" title="Checkbox">☑︎</button>
+          <button data-action="h1" title="Heading 1">H1</button>
+          <button data-action="h2" title="Heading 2">H2</button>
+          <button data-action="h3" title="Heading 3">H3</button>
+          <span class="sep"></span>
+          <button data-action="bullet" title="Bulleted list">• List</button>
+          <button data-action="number" title="Numbered list">1.</button>
+          <button data-action="quote" title="Blockquote">❯</button>
+          <span class="sep"></span>
+          <button data-action="bold" title="Bold"><b>B</b></button>
+          <button data-action="italic" title="Italic"><i>I</i></button>
+          <button data-action="strike" title="Strikethrough"><s>S</s></button>
+          <button data-action="code" title="Code">&lt;/&gt;</button>
+          <button data-action="link" title="Link">🔗</button>
+          <button data-action="image" title="Image">▧</button>
+          <button data-action="hr" title="Horizontal rule">—</button>
+          <span class="sep"></span>
+          <button id="writingSettingsBtn" class="mode-btn" title="Font and text size">Aa</button>
+          <button id="previewBtn" class="mode-btn" title="Preview Markdown">Preview</button>
+          <button id="reorderBtn" class="mode-btn" title="Reorder paragraphs and sections">☷ Reorder</button>
+        </div>
+      </div>
+
+      <section id="editorArea" class="editor-area">
+        <textarea id="editor" spellcheck="true" autocomplete="off" placeholder="Start writing…"></textarea>
+        <div id="preview" class="preview markdown-body" hidden></div>
+        <div id="reorderPanel" class="reorder-panel" hidden>
+          <div class="reorder-help">Drag the handles to rearrange paragraphs, sections, or individual list items. Tap Done when finished.</div>
+          <div id="blocksList" class="blocks-list"></div>
+          <button id="reorderDone" class="primary-btn">Done</button>
+        </div>
+      </section>
+
+      <input id="imageInput" type="file" accept="image/*" hidden>
+    </main>
+  </div>
+
+  <dialog id="folderDialog" class="modal">
+    <form method="dialog" id="folderForm">
+      <div class="modal-title">New Folder</div>
+      <input id="folderNameInput" class="modal-input" type="text" placeholder="Folder name" autocomplete="off">
+      <div class="modal-actions">
+        <button value="cancel" class="secondary-btn">Cancel</button>
+        <button id="folderSaveBtn" value="default" class="primary-btn">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="tagManagerDialog" class="modal tag-manager-modal">
+    <div class="tag-manager-head">
+      <div>
+        <div class="modal-title">Manage Tags</div>
+        <div class="tag-manager-subtitle">Organize groups, assign tags, rename, merge, or remove them.</div>
+      </div>
+      <button id="tagManagerCloseX" class="icon-btn" aria-label="Close tag manager">×</button>
+    </div>
+    <div class="tag-manager-section-head">
+      <span>Groups</span>
+      <button id="tagManagerNewGroupBtn" class="secondary-btn compact">＋ New group</button>
+    </div>
+    <div id="tagManagerGroups" class="tag-manager-groups"></div>
+    <div class="tag-manager-section-head tag-manager-tags-head"><span>Tags</span></div>
+    <div id="tagManagerList" class="tag-manager-list"></div>
+    <div class="modal-actions">
+      <button id="tagManagerCloseBtn" class="secondary-btn">Close</button>
+    </div>
+  </dialog>
+
+  <dialog id="writingSettingsDialog" class="modal writing-settings-modal">
+    <form method="dialog" id="writingSettingsForm">
+      <div class="modal-title">Writing Appearance</div>
+      <label class="settings-field">
+        <span>Font</span>
+        <select id="fontSelect">
+          <option value="system">System</option>
+          <option value="avenir">Avenir / Helvetica</option>
+          <option value="georgia">Georgia</option>
+          <option value="charter">Charter</option>
+          <option value="times">Times</option>
+          <option value="mono">Menlo / Monaco</option>
+        </select>
+      </label>
+      <label class="settings-field">
+        <span>Font size</span>
+        <select id="fontSizeSelect">
+          <option value="15">15 px</option>
+          <option value="16">16 px</option>
+          <option value="17">17 px</option>
+          <option value="18">18 px</option>
+          <option value="20">20 px</option>
+          <option value="22">22 px</option>
+          <option value="24">24 px</option>
+        </select>
+      </label>
+      <div class="settings-sample" id="fontSample">The quick brown fox jumps over the lazy dog.</div>
+      <div class="modal-actions">
+        <button value="cancel" class="secondary-btn">Close</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="historyDialog" class="modal history-modal">
+    <div class="history-dialog-head">
+      <div>
+        <div class="modal-title history-title">Version History</div>
+        <div class="history-subtitle">Automatic local snapshots of this note.</div>
+      </div>
+      <button id="historyCloseX" class="icon-btn" aria-label="Close history">×</button>
+    </div>
+    <div class="history-actions">
+      <button id="saveVersionBtn" class="primary-btn">Save version now</button>
+    </div>
+    <div id="historyPreview" class="history-preview" hidden>
+      <div class="history-preview-head">
+        <div id="historyPreviewMeta" class="history-preview-meta"></div>
+        <button id="historyPreviewClose" class="secondary-btn">Back to versions</button>
+      </div>
+      <pre id="historyPreviewText" class="history-preview-text"></pre>
+    </div>
+    <div id="historyList" class="history-list"></div>
+    <div class="modal-actions">
+      <button id="historyCloseBtn" class="secondary-btn">Close</button>
+    </div>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/markdown/markdown.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked@18.0.4/lib/marked.umd.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.4.7/dist/purify.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script src="app.js?v=26"></script>
+</body>
+</html>
