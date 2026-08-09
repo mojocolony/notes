@@ -31,6 +31,7 @@ button{cursor:pointer}
 .primary-btn,.secondary-btn,.icon-btn,.mini-btn,.text-btn,.toolbar button{border:1px solid var(--line);background:var(--panel);border-radius:9px;padding:8px 10px}
 .primary-btn{background:var(--accent);color:#fff;border-color:transparent;font-weight:600}.full{width:100%}.secondary-btn{background:var(--panel)}
 .icon-btn{width:36px;height:36px;padding:0;display:grid;place-items:center;background:transparent;border-color:transparent;font-size:18px}.icon-btn:hover{background:var(--panel-2)}.icon-btn.danger{color:var(--danger)}
+.icon-btn .action-icon{width:20px;height:20px;display:block;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.icon-btn.danger .action-icon{width:19px;height:19px}
 .mini-btn{padding:2px 7px;background:transparent;border-color:transparent;font-size:18px}.text-btn{border:0;background:transparent;text-align:left;color:var(--muted);padding:4px}
 .search-wrap{display:flex;align-items:center;gap:7px;border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:8px 9px}.search-wrap input{min-width:0;width:100%;border:0;outline:0;background:transparent}
 .nav-section{display:grid;gap:2px;margin-top:12px}.nav-item,.folder-item{width:100%;border:0;background:transparent;padding:8px 9px;border-radius:8px;display:flex;justify-content:space-between;align-items:center;text-align:left}.nav-item:hover,.folder-item:hover,.nav-item.active,.folder-item.active{background:var(--panel)}.count{font-size:12px;color:var(--muted)}
@@ -121,3 +122,38 @@ body.dragging-note .folder-item{transition:background .12s,box-shadow .12s}
 @media(max-width:620px){.tags-head-actions{gap:0}.manage-tags-btn{font-size:9px}.tag-sort-select{max-width:54px}.tag-manager-row{grid-template-columns:1fr}.tag-manager-controls{grid-template-columns:1fr}.tag-group-select{max-width:none;width:100%}.tag-manager-actions{justify-content:flex-start}.tag-manager-group-row{grid-template-columns:1fr}.tag-manager-group-row .tag-manager-actions{justify-content:flex-start}}
 .tag-group-toggle:disabled{opacity:1;color:var(--muted)}
 .tag-manager-modal{max-height:calc(100vh - 28px);overflow:auto}
+
+/* Settings + Dropbox sync */
+.settings-btn.dropbox-connected::after{
+  content:'';
+  position:absolute;
+  width:7px;height:7px;border-radius:50%;
+  background:#4f7b5b;
+  right:4px;bottom:4px;
+  box-shadow:0 0 0 2px var(--panel, #f7f7f5);
+}
+.settings-btn{position:relative}
+.settings-modal{width:min(620px,calc(100vw - 28px));max-height:min(760px,calc(100dvh - 28px));overflow:auto}
+.settings-dialog-head,.settings-section-title-row{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+.settings-dialog-subtitle{margin-top:4px;color:var(--muted);font-size:13px}
+.settings-section{padding:18px 0;border-top:1px solid var(--line)}
+.settings-section:first-of-type{margin-top:12px}
+.settings-section h3{margin:0 0 7px;font-size:15px}
+.settings-section p{margin:0 0 14px;color:var(--muted);line-height:1.45;font-size:13px}
+.settings-status-pill{font-size:12px;padding:4px 8px;border-radius:999px;background:var(--panel-2);color:var(--muted);white-space:nowrap}
+.settings-field{display:grid;gap:6px;margin:12px 0;font-size:13px;color:var(--muted)}
+.settings-field input{width:100%;box-sizing:border-box;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--text);padding:10px 11px;font:inherit}
+.redirect-box{display:grid;grid-template-columns:1fr auto;gap:7px 10px;align-items:center;padding:11px;border:1px solid var(--line);border-radius:12px;background:var(--panel-2)}
+.redirect-box .small-label{grid-column:1 / -1;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.redirect-box code{min-width:0;overflow-wrap:anywhere;font-size:12px}
+.redirect-box .text-btn{padding:4px 8px}
+.settings-helper{font-size:12px!important;margin-top:10px!important}
+.dropbox-connected-copy{display:flex;flex-direction:column;gap:4px;margin:8px 0 12px;font-size:13px}
+.dropbox-connected-copy span{color:var(--muted)}
+.settings-actions{display:flex;gap:8px;flex-wrap:wrap}
+.danger-text{color:#9a3f3f}
+@media(max-width:700px){
+  .settings-modal{width:calc(100vw - 18px);max-height:calc(100dvh - 18px)}
+  .head-actions{gap:2px}
+  .head-actions .icon-btn{min-width:34px;width:34px;height:34px}
+}

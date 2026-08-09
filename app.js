@@ -18,6 +18,13 @@
   };
   const FONT_SIZES = [15,16,17,18,20,22,24];
   const $ = (id) => document.getElementById(id);
+  const ACTION_ICONS = {
+    archive: `<svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5h16v11.25a1.75 1.75 0 0 1-1.75 1.75H5.75A1.75 1.75 0 0 1 4 18.75V7.5Z"/><path d="M3 4.5h18v3H3z"/><path d="M9 11.5h6"/></svg>`,
+    unarchive: `<svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5h16v11.25a1.75 1.75 0 0 1-1.75 1.75H5.75A1.75 1.75 0 0 1 4 18.75V7.5Z"/><path d="M3 4.5h18v3H3z"/><path d="M12 16v-5M9.75 13.25 12 11l2.25 2.25"/></svg>`,
+    restore: `<svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7H5v-4"/><path d="M5.5 6.5A8 8 0 1 1 4 14"/></svg>`,
+    trash: `<svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 7h15"/><path d="M9 4h6l1 3H8l1-3Z"/><path d="M7 7l.8 12h8.4L17 7"/><path d="M10 10.5v5.5M14 10.5v5.5"/></svg>`
+  };
+
   const els = {
     sidebar: $('sidebar'), scrim: $('scrim'), sidebarOpen: $('sidebarOpen'), sidebarClose: $('sidebarClose'),
     newNoteBtn: $('newNoteBtn'), newNoteMobile: $('newNoteMobile'), searchInput: $('searchInput'), notesList: $('notesList'), inboxDropZone: $('inboxDropZone'),
@@ -325,11 +332,12 @@
     scheduleSave();
     return true;
   }
-  function defaultState(){ return { notes: [], folders: [], selectedId: null, savedAt:null, settings: { ...WRITING_DEFAULTS }, ui: { tagsCollapsed:false }, sortPrefs: {}, manualOrders: {}, tagSettings:{sort:'az'}, tagGroups:[], tagGroupOrder:[], tagGroupByTag:{}, tagManualOrders:{} }; }
+  function defaultState(){ return { notes: [], folders: [], deletedNotes: [], selectedId: null, savedAt:null, settings: { ...WRITING_DEFAULTS }, ui: { tagsCollapsed:false }, sortPrefs: {}, manualOrders: {}, tagSettings:{sort:'az'}, tagGroups:[], tagGroupOrder:[], tagGroupByTag:{}, tagManualOrders:{} }; }
   function normalizeState(parsed){
     if(!parsed || typeof parsed!=='object') parsed=defaultState();
     parsed.notes = Array.isArray(parsed.notes) ? parsed.notes : [];
     parsed.folders = Array.isArray(parsed.folders) ? parsed.folders : [];
+    parsed.deletedNotes = Array.isArray(parsed.deletedNotes) ? parsed.deletedNotes.filter(x=>x&&x.id&&x.deletedAt).map(x=>({id:String(x.id),deletedAt:String(x.deletedAt)})) : [];
     parsed.sortPrefs = parsed.sortPrefs && typeof parsed.sortPrefs==='object' ? parsed.sortPrefs : {};
     parsed.manualOrders = parsed.manualOrders && typeof parsed.manualOrders==='object' ? parsed.manualOrders : {};
     parsed.ui = parsed.ui && typeof parsed.ui==='object' ? parsed.ui : {};
@@ -432,6 +440,7 @@
       els.saveStatus.textContent = 'Saving to recovery storage…';
     }
     scheduleStateMirror();
+    window.dispatchEvent(new CustomEvent('notes-local-save'));
   }
   function scheduleStateMirror(){
     clearTimeout(mirrorTimer);
@@ -1302,14 +1311,18 @@
     els.folderSelect.disabled=!!n.trashed;
     if(n.trashed){
       els.archiveBtn.title='Restore from Trash';
-      els.archiveBtn.textContent='↩';
+      els.archiveBtn.setAttribute('aria-label','Restore from Trash');
+      els.archiveBtn.innerHTML=ACTION_ICONS.restore;
       els.deleteBtn.title='Delete permanently';
       els.deleteBtn.setAttribute('aria-label','Delete permanently');
+      els.deleteBtn.innerHTML=ACTION_ICONS.trash;
     }else{
       els.archiveBtn.title=n.archived?'Unarchive':'Archive';
-      els.archiveBtn.textContent=n.archived?'↩':'⌑';
+      els.archiveBtn.setAttribute('aria-label',n.archived?'Unarchive':'Archive');
+      els.archiveBtn.innerHTML=n.archived?ACTION_ICONS.unarchive:ACTION_ICONS.archive;
       els.deleteBtn.title='Move to Trash';
       els.deleteBtn.setAttribute('aria-label','Move to Trash');
+      els.deleteBtn.innerHTML=ACTION_ICONS.trash;
     }
     if(previewMode) renderPreview();
     else scheduleTaskCheckboxRefresh();
@@ -1815,6 +1828,9 @@
     }
     if(!confirm(`Permanently delete “${displayTitle(n)}”? This removes the note, its images, and its local version history.`))return;
     clearTimeout(autoSnapshotTimers.get(n.id)); autoSnapshotTimers.delete(n.id); permanentlyDeletedNoteIds.add(n.id);
+    state.deletedNotes ||= [];
+    state.deletedNotes = state.deletedNotes.filter(x=>x.id!==n.id);
+    state.deletedNotes.push({id:n.id,deletedAt:now()});
     await deleteAttachments(n); try{await deleteHistoryForNote(n.id);}catch{} state.notes=state.notes.filter(x=>x.id!==n.id);
     const remaining=state.notes.filter(x=>x.trashed); selectedId=remaining[0]?.id||state.notes.find(x=>!x.trashed)?.id||null;
     if(!remaining.length){ currentView='inbox'; currentFolder=null; }
@@ -1838,6 +1854,27 @@
 
   if('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('./service-worker.js').catch(()=>{});
 
+  window.NotesBridge = {
+    getState(){ flushPendingSave(); return JSON.parse(JSON.stringify(state)); },
+    applyState(nextState){
+      flushPendingSave();
+      state=normalizeState(nextState);
+      selectedId=state.selectedId||state.notes[0]?.id||null;
+      if(selectedId && !state.notes.some(n=>n.id===selectedId)) selectedId=state.notes[0]?.id||null;
+      applyWritingPreferences();
+      persist();
+      renderAll();
+    },
+    getAttachment,
+    putAttachment,
+    deleteAttachments,
+    displayTitle,
+    getFolderName(folderId){ return state.folders.find(f=>f.id===folderId)?.name||''; },
+    flushPendingSave,
+    toast,
+    normalizeStateForSync(value){ return normalizeState(value); }
+  };
+
   async function initializeApp(){
     requestPersistentStorage();
     try{
@@ -1853,6 +1890,7 @@
     applyWritingPreferences();
     if(!selectedId && state.notes.length) selectedId=state.notes[0].id;
     if(!state.notes.length) newNote(); else { renderAll(); scheduleStateMirror(); }
+    window.dispatchEvent(new CustomEvent('notes-ready'));
   }
   initializeApp();
 })();
