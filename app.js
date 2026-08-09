@@ -36,7 +36,7 @@
     viewTitle: $('viewTitle'), viewSubtitle: $('viewSubtitle'), sortSelect: $('sortSelect'), inboxCount: $('inboxCount'), pinnedCount: $('pinnedCount'), archiveCount: $('archiveCount'), trashCount: $('trashCount'),
     noteTitle: $('noteTitle'), saveStatus: $('saveStatus'), folderSelect: $('folderSelect'), tagsInput: $('tagsInput'), editor: $('editor'), editorArea: $('editorArea'), preview: $('preview'), reorderPanel: $('reorderPanel'), blocksList: $('blocksList'),
     previewBtn: $('previewBtn'), reorderBtn: $('reorderBtn'), reorderDone: $('reorderDone'), toolbar: $('toolbar'), imageInput: $('imageInput'), pinBtn: $('pinBtn'), historyBtn: $('historyBtn'), shareBtn: $('shareBtn'), downloadBtn: $('downloadBtn'), archiveBtn: $('archiveBtn'), deleteBtn: $('deleteBtn'),
-    writingSettingsBtn: $('writingSettingsBtn'), writingSettingsDialog: $('writingSettingsDialog'), writingSettingsForm: $('writingSettingsForm'), fontSelect: $('fontSelect'), fontSizeSelect: $('fontSizeSelect'), fontSample: $('fontSample'),
+    writingSettingsBtn: $('writingSettingsBtn'), writingSettingsDialog: $('writingSettingsDialog'), writingSettingsForm: $('writingSettingsForm'), fontSelect: $('fontSelect'), fontSizeSelect: $('fontSizeSelect'), fontSample: $('fontSample'), previewFontSelect: $('previewFontSelect'), previewFontSizeSelect: $('previewFontSizeSelect'), previewFontSample: $('previewFontSample'),
     backupBtn: $('backupBtn'), restoreBtn: $('restoreBtn'), restoreInput: $('restoreInput'),
     bookmarkletLink: $('bookmarkletLink'), copyBookmarkletButton: $('copyBookmarkletButton'),
     clipDialog: $('clipDialog'), clipSourceTitle: $('clipSourceTitle'), clipContent: $('clipContent'), clipDestination: $('clipDestination'), clipExistingOptions: $('clipExistingOptions'), clipNoteSearch: $('clipNoteSearch'), clipExistingNote: $('clipExistingNote'), clipPosition: $('clipPosition'), clipNewOptions: $('clipNewOptions'), clipNewTitle: $('clipNewTitle'), clipNewFolder: $('clipNewFolder'), clipCloseX: $('clipCloseX'), clipCancelButton: $('clipCancelButton'), clipSaveButton: $('clipSaveButton'),
@@ -517,14 +517,24 @@
     const font = settings && FONT_STACKS[settings.font] ? settings.font : WRITING_DEFAULTS.font;
     const requestedSize = Number(settings?.size);
     const size = FONT_SIZES.includes(requestedSize) ? requestedSize : WRITING_DEFAULTS.size;
-    return { font, size };
+    // Older versions had one appearance setting for both editor and Preview.
+    // When preview-specific settings are absent, inherit the existing editor
+    // values so an upgrade does not unexpectedly change how notes look.
+    const previewFont = settings && FONT_STACKS[settings.previewFont] ? settings.previewFont : font;
+    const requestedPreviewSize = Number(settings?.previewSize);
+    const previewSize = FONT_SIZES.includes(requestedPreviewSize) ? requestedPreviewSize : size;
+    return { font, size, previewFont, previewSize };
   }
   function applyWritingPreferences(){
     state.settings = normalizeWritingSettings(state.settings);
     document.documentElement.style.setProperty('--note-font', FONT_STACKS[state.settings.font]);
     document.documentElement.style.setProperty('--note-font-size', `${state.settings.size}px`);
+    document.documentElement.style.setProperty('--preview-font', FONT_STACKS[state.settings.previewFont]);
+    document.documentElement.style.setProperty('--preview-font-size', `${state.settings.previewSize}px`);
     if(els.fontSelect) els.fontSelect.value = state.settings.font;
     if(els.fontSizeSelect) els.fontSizeSelect.value = String(state.settings.size);
+    if(els.previewFontSelect) els.previewFontSelect.value = state.settings.previewFont;
+    if(els.previewFontSizeSelect) els.previewFontSizeSelect.value = String(state.settings.previewSize);
     if(cmEditor) cmEditor.refresh();
   }
   function openWritingSettings(){
@@ -533,7 +543,12 @@
     else els.writingSettingsDialog?.setAttribute('open','');
   }
   function saveWritingPreference(){
-    state.settings = normalizeWritingSettings({ font: els.fontSelect.value, size: Number(els.fontSizeSelect.value) });
+    state.settings = normalizeWritingSettings({
+      font: els.fontSelect.value,
+      size: Number(els.fontSizeSelect.value),
+      previewFont: els.previewFontSelect.value,
+      previewSize: Number(els.previewFontSizeSelect.value)
+    });
     applyWritingPreferences();
     persist();
   }
@@ -2277,6 +2292,8 @@
   els.writingSettingsBtn.addEventListener('click',openWritingSettings);
   els.fontSelect.addEventListener('change',saveWritingPreference);
   els.fontSizeSelect.addEventListener('change',saveWritingPreference);
+  els.previewFontSelect.addEventListener('change',saveWritingPreference);
+  els.previewFontSizeSelect.addEventListener('change',saveWritingPreference);
   els.previewBtn.addEventListener('click',togglePreview); els.reorderBtn.addEventListener('click',()=>reorderMode?finishReorder():enterReorder()); els.reorderDone.addEventListener('click',finishReorder);
   els.newNoteBtn.addEventListener('click',newNote); els.newNoteMobile.addEventListener('click',newNote); els.sidebarOpen.addEventListener('click',openSidebar); els.sidebarClose.addEventListener('click',closeSidebar); els.scrim.addEventListener('click',closeSidebar);
   els.searchInput.addEventListener('input',renderNotesList);
