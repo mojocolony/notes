@@ -49,3 +49,11 @@ Open **Settings → Web Clipper** in the hosted app and drag **Save to Notes** t
 ## Image attachments
 
 Images pasted, dropped, or chosen in Notes are stored locally as attachments and synced to Dropbox under a single tidy `Notes/_assets/` folder. Each note gets a stable subfolder named from its note ID, so moving or renaming the note does not move its images. Notes created with the earlier sibling `.assets` layout are still read and are migrated to `_assets` on the next upload.
+
+
+## v44 Dropbox reliability update
+
+- Retries transient Dropbox 429/5xx/network failures instead of immediately reporting Dropbox as offline.
+- Caches known Dropbox folders during the session to avoid repeated create-folder calls on every save.
+- Distinguishes unreachable Dropbox, authorization trouble, Dropbox busy/rate-limited, and other sync errors.
+- Keeps the local-first safety behavior unchanged.

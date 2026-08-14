@@ -558,7 +558,10 @@
     const dropbox=window.NotesDropboxStatus;
     if(!dropbox?.connected) return localText;
     if(dropbox.state==='syncing' || dropbox.state==='connecting') return 'Saved locally · Syncing…';
-    if(dropbox.state==='offline') return 'Saved locally · Dropbox offline';
+    if(dropbox.state==='offline') return 'Saved locally · Dropbox unreachable';
+    if(dropbox.state==='busy') return 'Saved locally · Dropbox busy';
+    if(dropbox.state==='auth') return 'Saved locally · Reconnect Dropbox';
+    if(dropbox.state==='error') return 'Saved locally · Dropbox sync error';
     if(dropbox.state==='synced') return 'Saved locally · Dropbox synced';
     return 'Saved locally · Dropbox connected';
   }

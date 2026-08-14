@@ -48,7 +48,7 @@
   }
   function publishMainStatus(state=mainSyncState){
     mainSyncState=state;
-    window.NotesDropboxStatus={connected:!!dbx.connected,state:mainSyncState,lastSync:dbx.lastSync||null};
+    window.NotesDropboxStatus={connected:!!dbx.connected,state:mainSyncState,lastSync:dbx.lastSync||null,lastError:dbx.lastError||null};
     window.dispatchEvent(new CustomEvent('notes-dropbox-status',{detail:window.NotesDropboxStatus}));
   }
   function updateUI(){
@@ -70,6 +70,40 @@
     if(els.dropboxLastSync) els.dropboxLastSync.textContent=text;
   }
   function toast(msg){ bridge()?.toast?.(msg); }
+  function sleep(ms){ return new Promise(resolve=>setTimeout(resolve,ms)); }
+  function makeHttpError(label,response,body=''){
+    const err=new Error(`${label}: HTTP ${response.status}${body?` · ${body}`:''}`);
+    err.status=response.status; err.body=body; err.retryAfter=response.headers.get('Retry-After')||'';
+    return err;
+  }
+  async function fetchWithRetry(url,options={},label='Dropbox request',maxAttempts=4){
+    let lastErr;
+    for(let attempt=1;attempt<=maxAttempts;attempt++){
+      try{
+        const response=await fetch(url,options);
+        if(response.status===429 || response.status>=500){
+          const body=await response.clone().text().catch(()=> '');
+          lastErr=makeHttpError(label,response,body);
+          if(attempt<maxAttempts){
+            const retryHeader=Number(response.headers.get('Retry-After'));
+            const delay=Number.isFinite(retryHeader) && retryHeader>0 ? retryHeader*1000 : 450*Math.pow(2,attempt-1);
+            setSyncLabel(response.status===429?'Dropbox busy · retrying…':'Dropbox temporarily unavailable · retrying…');
+            await sleep(delay);
+            continue;
+          }
+        }
+        return response;
+      }catch(err){
+        lastErr=err;
+        if(attempt<maxAttempts){
+          setSyncLabel('Network problem · retrying…');
+          await sleep(450*Math.pow(2,attempt-1));
+          continue;
+        }
+      }
+    }
+    throw lastErr||new Error(`${label}: request failed`);
+  }
 
   function base64Url(bytes){
     let binary=''; new Uint8Array(bytes).forEach(b=>binary+=String.fromCharCode(b));
@@ -113,8 +147,8 @@
     setSyncLabel('Connecting…');
     try{
       const body=new URLSearchParams({code,grant_type:'authorization_code',redirect_uri:redirectUri(),client_id:pkce.appKey,code_verifier:pkce.verifier});
-      const response=await fetch('https://api.dropboxapi.com/oauth2/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});
-      if(!response.ok) throw new Error(await response.text());
+      const response=await fetchWithRetry('https://api.dropboxapi.com/oauth2/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body},'OAuth token exchange');
+      if(!response.ok){ const text=await response.text(); throw makeHttpError('OAuth token exchange',response,text); }
       const token=await response.json();
       dbx={connected:true,appKey:pkce.appKey,accessToken:token.access_token,refreshToken:token.refresh_token||null,expiresAt:Date.now()+((token.expires_in||14400)*1000)-60000,accountId:token.account_id||null,lastSync:null};
       saveDropbox(); localStorage.removeItem(PKCE_KEY); history.replaceState({},'',redirectUri());
@@ -130,8 +164,8 @@
     if(!dbx.expiresAt || Date.now()<dbx.expiresAt) return dbx.accessToken;
     if(!dbx.refreshToken) throw new Error('Dropbox authorization expired. Reconnect Dropbox.');
     const body=new URLSearchParams({grant_type:'refresh_token',refresh_token:dbx.refreshToken,client_id:dbx.appKey});
-    const response=await fetch('https://api.dropboxapi.com/oauth2/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});
-    if(!response.ok) throw new Error(await response.text());
+    const response=await fetchWithRetry('https://api.dropboxapi.com/oauth2/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body},'OAuth refresh');
+    if(!response.ok){ const text=await response.text(); throw makeHttpError('OAuth refresh',response,text); }
     const token=await response.json();
     dbx.accessToken=token.access_token; dbx.expiresAt=Date.now()+((token.expires_in||14400)*1000)-60000; saveDropbox();
     return dbx.accessToken;
@@ -139,29 +173,35 @@
 
   async function apiJson(route,arg,{allowConflict=false}={}){
     const token=await validAccessToken();
-    const response=await fetch(`https://api.dropboxapi.com/2/${route}`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify(arg||{})});
+    const response=await fetchWithRetry(`https://api.dropboxapi.com/2/${route}`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify(arg||{})},route);
     if(allowConflict && response.status===409) return null;
-    if(!response.ok) throw new Error(`${route}: ${await response.text()}`);
+    if(!response.ok){ const text=await response.text(); throw makeHttpError(route,response,text); }
     return response.status===204?null:response.json();
   }
   async function download(path,as='text'){
     const token=await validAccessToken();
-    const response=await fetch('https://content.dropboxapi.com/2/files/download',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Dropbox-API-Arg':JSON.stringify({path})}});
+    const response=await fetchWithRetry('https://content.dropboxapi.com/2/files/download',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Dropbox-API-Arg':JSON.stringify({path})}},`download ${path}`);
     if(response.status===409) return null;
-    if(!response.ok) throw new Error(`download ${path}: ${await response.text()}`);
+    if(!response.ok){ const text=await response.text(); throw makeHttpError(`download ${path}`,response,text); }
     if(as==='blob') return response.blob();
     return response.text();
   }
   async function upload(path,body){
     const token=await validAccessToken();
-    const response=await fetch('https://content.dropboxapi.com/2/files/upload',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/octet-stream','Dropbox-API-Arg':JSON.stringify({path,mode:'overwrite',autorename:false,mute:true})},body});
-    if(!response.ok) throw new Error(`upload ${path}: ${await response.text()}`);
+    const response=await fetchWithRetry('https://content.dropboxapi.com/2/files/upload',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/octet-stream','Dropbox-API-Arg':JSON.stringify({path,mode:'overwrite',autorename:false,mute:true})},body},`upload ${path}`);
+    if(!response.ok){ const text=await response.text(); throw makeHttpError(`upload ${path}`,response,text); }
     return response.json();
   }
+  const knownFolders=new Set(['/']);
   async function ensureFolder(path){
-    if(!path||path==='/') return;
+    if(!path||path==='/'||knownFolders.has(path)) return;
     const parts=path.split('/').filter(Boolean); let built='';
-    for(const part of parts){ built+=`/${part}`; await apiJson('files/create_folder_v2',{path:built,autorename:false},{allowConflict:true}); }
+    for(const part of parts){
+      built+=`/${part}`;
+      if(knownFolders.has(built)) continue;
+      await apiJson('files/create_folder_v2',{path:built,autorename:false},{allowConflict:true});
+      knownFolders.add(built);
+    }
   }
   async function removeRemote(path){ if(!path) return; await apiJson('files/delete_v2',{path},{allowConflict:true}); }
 
@@ -398,10 +438,23 @@
         }
       }
       await writeIndex(local,finalEntries,tombstones);
-      dbx.lastSync=now(); mainSyncState='synced'; saveDropbox(); setSyncLabel(relativeTime(dbx.lastSync)); publishMainStatus('synced');
+      dbx.lastSync=now(); dbx.lastError=null; mainSyncState='synced'; saveDropbox(); setSyncLabel(relativeTime(dbx.lastSync)); publishMainStatus('synced');
       if(announce) toast('Dropbox connected and synced');
     }catch(err){
-      console.error('Notes Dropbox sync',err); setSyncLabel('Sync problem · local copy is safe'); publishMainStatus('offline'); toast('Dropbox sync failed. Your notes are still saved on this device.');
+      console.error('Notes Dropbox sync',err);
+      const status=Number(err?.status)||0;
+      const body=String(err?.body||err?.message||'');
+      dbx.lastError={at:now(),status:status||null,message:body.slice(0,500)}; saveDropbox();
+      if(status===401){
+        setSyncLabel('Dropbox authorization needs attention'); publishMainStatus('auth'); toast('Dropbox authorization failed. Reconnect Dropbox.');
+      }else if(status===429 || /too_many_write_operations/i.test(body)){
+        setSyncLabel('Dropbox busy · sync will retry'); publishMainStatus('busy'); toast('Dropbox is temporarily busy. Your local copy is safe and Notes will retry.');
+        setTimeout(()=>{ if(dbx.connected&&!syncing) syncWithDropbox(); },5000);
+      }else if(err instanceof TypeError || /failed to fetch|networkerror|network request failed/i.test(body)){
+        setSyncLabel('Unable to reach Dropbox'); publishMainStatus('offline'); toast('Unable to reach Dropbox. Your notes are still saved on this device.');
+      }else{
+        setSyncLabel(`Dropbox sync error${status?` · ${status}`:''}`); publishMainStatus('error'); toast('Dropbox sync hit an error. Your local copy is safe.');
+      }
     }finally{
       suppressLocalSave=false; syncing=false;
       if(syncAgain){ syncAgain=false; scheduleSync(); }
