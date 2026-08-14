@@ -36,7 +36,7 @@
     tagList: $('tagList'), tagsToggleBtn: $('tagsToggleBtn'), tagsChevron: $('tagsChevron'), tagSortSelect: $('tagSortSelect'), addTagGroupBtn: $('addTagGroupBtn'), manageTagsBtn: $('manageTagsBtn'), tagManagerDialog: $('tagManagerDialog'), tagManagerGroups: $('tagManagerGroups'), tagManagerList: $('tagManagerList'), tagManagerNewGroupBtn: $('tagManagerNewGroupBtn'), tagManagerCloseBtn: $('tagManagerCloseBtn'), tagManagerCloseX: $('tagManagerCloseX'),
     viewTitle: $('viewTitle'), viewSubtitle: $('viewSubtitle'), sortSelect: $('sortSelect'), inboxCount: $('inboxCount'), pinnedCount: $('pinnedCount'), archiveCount: $('archiveCount'), trashCount: $('trashCount'),
     noteTitle: $('noteTitle'), saveStatus: $('saveStatus'), folderSelect: $('folderSelect'), tagsInput: $('tagsInput'), editor: $('editor'), editorArea: $('editorArea'), preview: $('preview'), reorderPanel: $('reorderPanel'), blocksList: $('blocksList'),
-    previewBtn: $('previewBtn'), reorderBtn: $('reorderBtn'), reorderDone: $('reorderDone'), toolbar: $('toolbar'), imageInput: $('imageInput'), pinBtn: $('pinBtn'), historyBtn: $('historyBtn'), shareBtn: $('shareBtn'), downloadBtn: $('downloadBtn'), archiveBtn: $('archiveBtn'), deleteBtn: $('deleteBtn'), trashNotice: $('trashNotice'), restoreTrashBtn: $('restoreTrashBtn'),
+    previewBtn: $('previewBtn'), reorderBtn: $('reorderBtn'), reorderDone: $('reorderDone'), toolbar: $('toolbar'), imageInput: $('imageInput'), pinBtn: $('pinBtn'), historyBtn: $('historyBtn'), shareBtn: $('shareBtn'), downloadBtn: $('downloadBtn'), archiveBtn: $('archiveBtn'), deleteBtn: $('deleteBtn'),
     writingSettingsBtn: $('writingSettingsBtn'), writingSettingsDialog: $('writingSettingsDialog'), writingSettingsForm: $('writingSettingsForm'), fontSelect: $('fontSelect'), fontSizeSelect: $('fontSizeSelect'), fontSample: $('fontSample'), previewFontSelect: $('previewFontSelect'), previewFontSizeSelect: $('previewFontSizeSelect'), previewFontSample: $('previewFontSample'),
     backupBtn: $('backupBtn'), restoreBtn: $('restoreBtn'), restoreInput: $('restoreInput'),
     bookmarkletLink: $('bookmarkletLink'), copyBookmarkletButton: $('copyBookmarkletButton'),
@@ -1573,7 +1573,7 @@
       els.sortSelect.title=currentTag ? 'Manual ordering is available inside folders and Inbox' : (currentSortPreference()==='manual' && els.searchInput.value.trim() ? 'Clear search to reorder notes manually' : 'Sort notes');
     }
     els.notesList.innerHTML='';
-    if(!notes.length){ els.notesList.innerHTML=`<div class="empty-state">${currentView==='trash' && !query && !currentTag ? 'Trash is empty.' : 'No notes here yet.'}</div>`; return; }
+    if(!notes.length){ els.notesList.innerHTML='<div class="empty-state">No notes here yet.</div>'; return; }
     notes.forEach(n=>{
       const row=document.createElement('div'); row.className='note-row'+(n.id===selectedId?' active':''); row.dataset.noteId=n.id;
       const tags=(n.tags||[]).slice(0,2).map(t=>`<span class="tag-pill">${escapeHtml(t)}</span>`).join('');
@@ -1720,7 +1720,6 @@
     els.pinBtn.setAttribute('aria-label',n.pinned?'Unpin note':'Pin note');
     els.pinBtn.disabled=!!n.trashed;
     els.folderSelect.disabled=!!n.trashed;
-    if(els.trashNotice) els.trashNotice.hidden=!n.trashed;
     if(n.trashed){
       els.archiveBtn.title='Restore from Trash';
       els.archiveBtn.setAttribute('aria-label','Restore from Trash');
@@ -2356,22 +2355,16 @@
   els.addTagGroupBtn?.addEventListener('click',promptNewTagGroup);
   els.tagManagerNewGroupBtn?.addEventListener('click',promptNewTagGroup);
   els.manageTagsBtn?.addEventListener('click',openTagManager); els.tagManagerCloseBtn?.addEventListener('click',()=>els.tagManagerDialog.close()); els.tagManagerCloseX?.addEventListener('click',()=>els.tagManagerDialog.close());
-  async function restoreFromTrash(n){
-    if(!n || !n.trashed) return;
-    n.trashed=false; n.deletedAt=null; n.archived=!!n.preTrashArchived; delete n.preTrashArchived; n.updated=now();
-    persist(); await createSnapshot(n,'Restored from Trash',true);
-    currentTag=null;
-    els.searchInput.value='';
-    if(n.archived){ currentView='archived'; currentFolder=null; } else if(n.folderId){ currentView='folder'; currentFolder=n.folderId; } else { currentView='inbox'; currentFolder=null; }
-    selectedId=n.id;
-    renderAll(); toast('Restored from Trash');
-  }
   els.pinBtn.addEventListener('click',()=>{flushPendingSave();const n=currentNote();if(!n||n.trashed)return;n.pinned=!n.pinned;n.updated=now();persist();queueAutoSnapshot(n);renderAll();});
-  els.restoreTrashBtn?.addEventListener('click',async()=>{flushPendingSave();await restoreFromTrash(currentNote());});
   els.archiveBtn.addEventListener('click',async()=>{
     flushPendingSave();
     const n=currentNote(); if(!n)return;
-    if(n.trashed){ await restoreFromTrash(n); return; }
+    if(n.trashed){
+      n.trashed=false; n.deletedAt=null; n.archived=!!n.preTrashArchived; delete n.preTrashArchived; n.updated=now();
+      persist(); await createSnapshot(n,'Restored from Trash',true);
+      if(n.archived){ currentView='archived'; currentFolder=null; } else if(n.folderId){ currentView='folder'; currentFolder=n.folderId; } else { currentView='inbox'; currentFolder=null; }
+      renderAll(); toast('Restored from Trash'); return;
+    }
     n.archived=!n.archived; n.updated=now(); persist(); queueAutoSnapshot(n); currentView=n.archived?'archived':'inbox'; currentFolder=null; renderAll();
   });
   els.deleteBtn.addEventListener('click',async()=>{
@@ -2380,7 +2373,7 @@
     if(!n.trashed){
       await createSnapshot(n,'Before Trash',true);
       n.preTrashArchived=!!n.archived; n.trashed=true; n.deletedAt=now(); n.updated=now(); persist();
-      currentTag=null; currentView='trash'; currentFolder=null; els.searchInput.value=''; selectedId=n.id; renderAll(); toast('Moved to Trash'); return;
+      currentView='trash'; currentFolder=null; renderAll(); toast('Moved to Trash'); return;
     }
     if(!confirm(`Permanently delete “${displayTitle(n)}”? This removes the note, its images, and its local version history.`))return;
     clearTimeout(autoSnapshotTimers.get(n.id)); autoSnapshotTimers.delete(n.id); permanentlyDeletedNoteIds.add(n.id);
