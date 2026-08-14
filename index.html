@@ -6,13 +6,13 @@
   <meta name="theme-color" content="#f7f5f1">
   <title>Notes</title>
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=46">
-  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=46">
-  <link rel="shortcut icon" href="favicon.ico?v=46">
-  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=46">
-  <link rel="icon" type="image/svg+xml" href="notes-icon.svg?v=46">
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=47">
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=47">
+  <link rel="shortcut icon" href="favicon.ico?v=47">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=47">
+  <link rel="icon" type="image/svg+xml" href="notes-icon.svg?v=47">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.min.css">
-  <link rel="stylesheet" href="styles.css?v=46">
+  <link rel="stylesheet" href="styles.css?v=47">
 </head>
 <body>
   <div class="app-shell">
@@ -64,7 +64,7 @@
         <button id="backupBtn" class="text-btn">Export backup</button>
         <button id="restoreBtn" class="text-btn">Import backup</button>
         <input id="restoreInput" type="file" accept=".json,.zip,application/json,application/zip" hidden>
-        <div class="build-number" aria-label="Notes build 46">Notes v1.46</div>
+        <div class="build-number" aria-label="Notes build 47">Notes v1.47</div>
       </div>
     </aside>
 
@@ -112,6 +112,11 @@
           <button id="deleteBtn" class="icon-btn danger" title="Move to Trash" aria-label="Move to Trash"><i data-lucide="trash-2"></i></button>
         </div>
       </header>
+
+      <div id="trashNotice" class="trash-notice" hidden>
+        <span><i data-lucide="trash-2" aria-hidden="true"></i> This note is in Trash.</span>
+        <button id="restoreTrashBtn" class="secondary-btn compact icon-label-btn" type="button"><i data-lucide="rotate-ccw"></i><span>Restore</span></button>
+      </div>
 
       <div class="meta-row">
         <label class="meta-field">Folder
