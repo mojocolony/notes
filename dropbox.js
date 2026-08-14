@@ -13,7 +13,7 @@
     dropboxStatus: $('dropboxStatus'), dropboxSetup: $('dropboxSetup'), dropboxConnected: $('dropboxConnected'),
     dropboxAppKey: $('dropboxAppKey'), redirectUriText: $('redirectUriText'), copyRedirectButton: $('copyRedirectButton'),
     connectDropboxButton: $('connectDropboxButton'), syncNowButton: $('syncNowButton'), disconnectDropboxButton: $('disconnectDropboxButton'),
-    dropboxLastSync: $('dropboxLastSync'), saveStatus: $('saveStatus')
+    dropboxLastSync: $('dropboxLastSync'), dropboxErrorDetail: $('dropboxErrorDetail'), saveStatus: $('saveStatus')
   };
 
   let dbx = loadDropbox();
@@ -59,6 +59,11 @@
     if(els.dropboxConnected) els.dropboxConnected.hidden=!connected;
     if(els.dropboxStatus) els.dropboxStatus.textContent=connected?'Connected':'Not connected';
     if(els.dropboxLastSync) els.dropboxLastSync.textContent=connected?relativeTime(dbx.lastSync):'';
+    if(els.dropboxErrorDetail){
+      const e=dbx.lastError;
+      els.dropboxErrorDetail.hidden=!connected||!e;
+      els.dropboxErrorDetail.textContent=e ? `${e.stage?`${e.stage}: `:''}${e.message||'Unknown sync error'}` : '';
+    }
     if(els.settingsBtn){
       els.settingsBtn.classList.toggle('dropbox-connected',connected);
       els.settingsBtn.title=connected?'Settings · Dropbox connected':'Settings';
@@ -71,36 +76,50 @@
   }
   function toast(msg){ bridge()?.toast?.(msg); }
   function sleep(ms){ return new Promise(resolve=>setTimeout(resolve,ms)); }
+  function headerSafeJson(value){
+    // Dropbox content endpoints put route arguments in an HTTP header.
+    // Escape non-ASCII code units so browser header construction cannot fail
+    // on note/folder names containing smart punctuation, accents, emoji, etc.
+    return JSON.stringify(value).replace(/[\u007f-\uffff]/g,ch=>`\\u${ch.charCodeAt(0).toString(16).padStart(4,'0')}`);
+  }
   function makeHttpError(label,response,body=''){
     const err=new Error(`${label}: HTTP ${response.status}${body?` · ${body}`:''}`);
-    err.status=response.status; err.body=body; err.retryAfter=response.headers.get('Retry-After')||'';
+    err.status=response.status; err.body=body; err.retryAfter=response.headers.get('Retry-After')||''; err.stage=label;
+    return err;
+  }
+  function makeNetworkError(label,cause){
+    const msg=String(cause?.message||cause||'Network request failed');
+    const err=new Error(`${label}: ${msg}`);
+    err.name='DropboxNetworkError'; err.isDropboxNetworkError=true; err.stage=label; err.causeName=cause?.name||null;
     return err;
   }
   async function fetchWithRetry(url,options={},label='Dropbox request',maxAttempts=4){
     let lastErr;
     for(let attempt=1;attempt<=maxAttempts;attempt++){
+      let response;
       try{
-        const response=await fetch(url,options);
-        if(response.status===429 || response.status>=500){
-          const body=await response.clone().text().catch(()=> '');
-          lastErr=makeHttpError(label,response,body);
-          if(attempt<maxAttempts){
-            const retryHeader=Number(response.headers.get('Retry-After'));
-            const delay=Number.isFinite(retryHeader) && retryHeader>0 ? retryHeader*1000 : 450*Math.pow(2,attempt-1);
-            setSyncLabel(response.status===429?'Dropbox busy · retrying…':'Dropbox temporarily unavailable · retrying…');
-            await sleep(delay);
-            continue;
-          }
-        }
-        return response;
-      }catch(err){
-        lastErr=err;
+        response=await fetch(url,options);
+      }catch(cause){
+        lastErr=makeNetworkError(label,cause);
         if(attempt<maxAttempts){
-          setSyncLabel('Network problem · retrying…');
+          setSyncLabel(`Retrying Dropbox · ${label}`);
           await sleep(450*Math.pow(2,attempt-1));
           continue;
         }
+        throw lastErr;
       }
+      if(response.status===429 || response.status>=500){
+        const body=await response.clone().text().catch(()=> '');
+        lastErr=makeHttpError(label,response,body);
+        if(attempt<maxAttempts){
+          const retryHeader=Number(response.headers.get('Retry-After'));
+          const delay=Number.isFinite(retryHeader) && retryHeader>0 ? retryHeader*1000 : 450*Math.pow(2,attempt-1);
+          setSyncLabel(response.status===429?'Dropbox busy · retrying…':'Dropbox temporarily unavailable · retrying…');
+          await sleep(delay);
+          continue;
+        }
+      }
+      return response;
     }
     throw lastErr||new Error(`${label}: request failed`);
   }
@@ -180,7 +199,7 @@
   }
   async function download(path,as='text'){
     const token=await validAccessToken();
-    const response=await fetchWithRetry('https://content.dropboxapi.com/2/files/download',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Dropbox-API-Arg':JSON.stringify({path})}},`download ${path}`);
+    const response=await fetchWithRetry('https://content.dropboxapi.com/2/files/download',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Dropbox-API-Arg':headerSafeJson({path})}},`download ${path}`);
     if(response.status===409) return null;
     if(!response.ok){ const text=await response.text(); throw makeHttpError(`download ${path}`,response,text); }
     if(as==='blob') return response.blob();
@@ -188,7 +207,7 @@
   }
   async function upload(path,body){
     const token=await validAccessToken();
-    const response=await fetchWithRetry('https://content.dropboxapi.com/2/files/upload',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/octet-stream','Dropbox-API-Arg':JSON.stringify({path,mode:'overwrite',autorename:false,mute:true})},body},`upload ${path}`);
+    const response=await fetchWithRetry('https://content.dropboxapi.com/2/files/upload',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/octet-stream','Dropbox-API-Arg':headerSafeJson({path,mode:'overwrite',autorename:false,mute:true})},body},`upload ${path}`);
     if(!response.ok){ const text=await response.text(); throw makeHttpError(`upload ${path}`,response,text); }
     return response.json();
   }
@@ -444,22 +463,33 @@
       console.error('Notes Dropbox sync',err);
       const status=Number(err?.status)||0;
       const body=String(err?.body||err?.message||'');
-      dbx.lastError={at:now(),status:status||null,message:body.slice(0,500)}; saveDropbox();
+      const stage=String(err?.stage||'Dropbox sync');
+      dbx.lastError={at:now(),status:status||null,name:err?.name||'Error',stage,message:body.slice(0,500)}; saveDropbox();
       if(status===401){
         setSyncLabel('Dropbox authorization needs attention'); publishMainStatus('auth'); toast('Dropbox authorization failed. Reconnect Dropbox.');
       }else if(status===429 || /too_many_write_operations/i.test(body)){
         setSyncLabel('Dropbox busy · sync will retry'); publishMainStatus('busy'); toast('Dropbox is temporarily busy. Your local copy is safe and Notes will retry.');
         setTimeout(()=>{ if(dbx.connected&&!syncing) syncWithDropbox(); },5000);
-      }else if(err instanceof TypeError || /failed to fetch|networkerror|network request failed/i.test(body)){
-        setSyncLabel('Unable to reach Dropbox'); publishMainStatus('offline'); toast('Unable to reach Dropbox. Your notes are still saved on this device.');
+      }else if(err?.isDropboxNetworkError===true){
+        setSyncLabel(`Unable to reach Dropbox · ${stage}`); publishMainStatus('offline'); toast(`Dropbox request could not be reached: ${stage}. Your local copy is safe.`);
       }else{
-        setSyncLabel(`Dropbox sync error${status?` · ${status}`:''}`); publishMainStatus('error'); toast('Dropbox sync hit an error. Your local copy is safe.');
+        const short=body.replace(/\s+/g,' ').slice(0,140);
+        setSyncLabel(`Dropbox sync error${status?` · ${status}`:''}`); publishMainStatus('error');
+        toast(`Dropbox sync error · ${stage}${short?`: ${short}`:''}`);
       }
     }finally{
       suppressLocalSave=false; syncing=false;
       if(syncAgain){ syncAgain=false; scheduleSync(); }
     }
   }
+
+  window.NotesDropboxDebug=()=>({
+    connected:!!dbx.connected,
+    lastSync:dbx.lastSync||null,
+    lastError:dbx.lastError||null,
+    state:mainSyncState,
+    redirectUri:redirectUri()
+  });
 
   function disconnectDropbox(){
     if(!confirm('Disconnect Dropbox on this device? Your local notes will remain.')) return;

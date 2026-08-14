@@ -57,3 +57,10 @@ Images pasted, dropped, or chosen in Notes are stored locally as attachments and
 - Caches known Dropbox folders during the session to avoid repeated create-folder calls on every save.
 - Distinguishes unreachable Dropbox, authorization trouble, Dropbox busy/rate-limited, and other sync errors.
 - Keeps the local-first safety behavior unchanged.
+
+
+## v45 Dropbox reliability
+- Escapes non-ASCII Dropbox API header arguments for browser-safe paths.
+- Distinguishes actual fetch/network failures from unrelated JavaScript TypeErrors.
+- Shows the exact failing Dropbox operation in Settings after an error.
+- Keeps transient retry handling from v44.
