@@ -22,11 +22,12 @@
   const FONT_SIZES = [15,16,17,18,20,22,24];
   const $ = (id) => document.getElementById(id);
   const ACTION_ICONS = {
-    archive: `<svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5h16v11.25a1.75 1.75 0 0 1-1.75 1.75H5.75A1.75 1.75 0 0 1 4 18.75V7.5Z"/><path d="M3 4.5h18v3H3z"/><path d="M9 11.5h6"/></svg>`,
-    unarchive: `<svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5h16v11.25a1.75 1.75 0 0 1-1.75 1.75H5.75A1.75 1.75 0 0 1 4 18.75V7.5Z"/><path d="M3 4.5h18v3H3z"/><path d="M12 16v-5M9.75 13.25 12 11l2.25 2.25"/></svg>`,
-    restore: `<svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7H5v-4"/><path d="M5.5 6.5A8 8 0 1 1 4 14"/></svg>`,
-    trash: `<svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 7h15"/><path d="M9 4h6l1 3H8l1-3Z"/><path d="M7 7l.8 12h8.4L17 7"/><path d="M10 10.5v5.5M14 10.5v5.5"/></svg>`
+    archive: `<i data-lucide="archive"></i>`,
+    unarchive: `<i data-lucide="archive-restore"></i>`,
+    restore: `<i data-lucide="rotate-ccw"></i>`,
+    trash: `<i data-lucide="trash-2"></i>`
   };
+  function refreshIcons(){ if(window.lucide) window.lucide.createIcons(); }
 
   const els = {
     sidebar: $('sidebar'), scrim: $('scrim'), sidebarOpen: $('sidebarOpen'), sidebarClose: $('sidebarClose'), sidebarResizer: $('sidebarResizer'), listResizer: $('listResizer'),
@@ -185,6 +186,21 @@
     });
     applyLayoutWidths();
   }
+
+  function refreshEditorViewport(){
+    if(!cmEditor) return;
+    requestAnimationFrame(()=>{
+      try{
+        cmEditor.refresh();
+        if(cmEditor.hasFocus()) cmEditor.scrollIntoView(cmEditor.getCursor(),96);
+      }catch{}
+    });
+  }
+  if(window.visualViewport){
+    window.visualViewport.addEventListener('resize',refreshEditorViewport);
+    window.visualViewport.addEventListener('scroll',refreshEditorViewport);
+  }
+  window.addEventListener('orientationchange',refreshEditorViewport);
 
   function editorValue(){ return cmEditor ? cmEditor.getValue() : els.editor.value; }
   function setEditorValue(value){
@@ -1302,10 +1318,10 @@
       const node=document.createElement('div'); node.className='folder-node'; node.dataset.folderNodeId=f.id;
       const zone=document.createElement('div'); zone.className='folder-drop-zone'; zone.dataset.folderId=f.id;
       const row=document.createElement('div'); row.className='folder-row';
-      const handle=document.createElement('span'); handle.className='folder-drag-handle'; handle.textContent='⠿'; handle.title='Move folder'; handle.setAttribute('aria-label','Move folder');
+      const handle=document.createElement('span'); handle.className='folder-drag-handle'; handle.innerHTML='<i data-lucide="grip-vertical"></i>'; handle.title='Move folder'; handle.setAttribute('aria-label','Move folder');
       row.appendChild(handle);
       if(children.length){
-        const toggle=document.createElement('button'); toggle.className='folder-toggle'; toggle.type='button'; toggle.textContent=f.collapsed?'›':'⌄'; toggle.title=f.collapsed?'Expand folder':'Collapse folder'; toggle.setAttribute('aria-label',toggle.title);
+        const toggle=document.createElement('button'); toggle.className='folder-toggle'; toggle.type='button'; toggle.innerHTML=f.collapsed?'<i data-lucide="chevron-right"></i>':'<i data-lucide="chevron-down"></i>'; toggle.title=f.collapsed?'Expand folder':'Collapse folder'; toggle.setAttribute('aria-label',toggle.title);
         toggle.addEventListener('click',e=>{ e.stopPropagation(); f.collapsed=!f.collapsed; persist(); renderSidebar(); });
         row.appendChild(toggle);
       }else{
@@ -1331,7 +1347,7 @@
         els.tagsToggleBtn.setAttribute('aria-expanded',String(!tagsCollapsed));
         els.tagsToggleBtn.title=tagsCollapsed?'Expand tags':'Collapse tags';
       }
-      if(els.tagsChevron) els.tagsChevron.textContent=tagsCollapsed?'›':'⌄';
+      if(els.tagsChevron) els.tagsChevron.innerHTML=tagsCollapsed?'<i data-lucide="chevron-right"></i>':'<i data-lucide="chevron-down"></i>';
       if(els.tagSortSelect) els.tagSortSelect.value=state.tagSettings.sort==='manual'?'manual':'az';
       els.tagList.innerHTML='';
       const groups=orderedTagGroups();
@@ -1341,7 +1357,7 @@
       const makeTagButton=(item)=>{
         const row=document.createElement('div'); row.className='tag-sort-row'; row.dataset.tagKey=item.key;
         if(state.tagSettings.sort==='manual'){
-          const handle=document.createElement('span'); handle.className='tag-drag-handle'; handle.textContent='⠿'; handle.title='Reorder or move tag'; handle.setAttribute('aria-hidden','true'); row.appendChild(handle);
+          const handle=document.createElement('span'); handle.className='tag-drag-handle'; handle.innerHTML='<i data-lucide="grip-vertical"></i>'; handle.title='Reorder or move tag'; handle.setAttribute('aria-hidden','true'); row.appendChild(handle);
         }
         const b=document.createElement('button'); b.className='tag-item'+(currentTag&&tagKey(currentTag)===item.key?' active':'');
         b.innerHTML=`<span class="tag-name">${escapeHtml(item.name)}</span><span class="count">${item.count}</span>`;
@@ -1353,10 +1369,10 @@
         const items=tagsForGroup(gid);
         const wrap=document.createElement('section'); wrap.className='tag-group'+(ungrouped?' tag-group-ungrouped':''); wrap.dataset.groupId=gid||'';
         const head=document.createElement('div'); head.className='tag-group-head';
-        if(!ungrouped){ const drag=document.createElement('span'); drag.className='tag-group-drag-handle'; drag.textContent='⠿'; drag.title='Reorder tag group'; head.appendChild(drag); }
+        if(!ungrouped){ const drag=document.createElement('span'); drag.className='tag-group-drag-handle'; drag.innerHTML='<i data-lucide="grip-vertical"></i>'; drag.title='Reorder tag group'; head.appendChild(drag); }
         const toggle=document.createElement('button'); toggle.type='button'; toggle.className='tag-group-toggle';
         const collapsed=ungrouped?false:!!group.collapsed;
-        toggle.innerHTML=`<span class="tag-group-chevron">${collapsed?'›':'⌄'}</span><span class="tag-group-name">${escapeHtml(ungrouped?'Ungrouped':group.name)}</span><span class="count">${items.length||''}</span>`;
+        toggle.innerHTML=`<span class="tag-group-chevron"><i data-lucide="${collapsed?'chevron-right':'chevron-down'}"></i></span><span class="tag-group-name">${escapeHtml(ungrouped?'Ungrouped':group.name)}</span><span class="count">${items.length||''}</span>`;
         toggle.setAttribute('aria-expanded',String(!collapsed));
         if(!ungrouped) toggle.addEventListener('click',()=>{ group.collapsed=!group.collapsed; persist(); renderSidebar(); });
         else toggle.disabled=true;
@@ -1382,6 +1398,7 @@
     }
     fillFolderSelect();
     requestAnimationFrame(setupFolderDragging);
+    refreshIcons();
     requestAnimationFrame(setupNoteDragging);
   }
   function setupTagDragging(){
@@ -1561,10 +1578,11 @@
       const row=document.createElement('div'); row.className='note-row'+(n.id===selectedId?' active':''); row.dataset.noteId=n.id;
       const tags=(n.tags||[]).slice(0,2).map(t=>`<span class="tag-pill">${escapeHtml(t)}</span>`).join('');
       const location=(query || currentTag) ? `<span>${escapeHtml(noteLocationLabel(n))}</span>` : '';
-      row.innerHTML=`<div class="note-drag-handle" title="${currentSortPreference()==='manual'?'Reorder or move note':'Move note'}" aria-label="${currentSortPreference()==='manual'?'Reorder or move note':'Move note'}">⠿</div><div class="note-row-content"><div class="note-row-title">${n.pinned?'★ ':''}${escapeHtml(displayTitle(n))}</div><div class="note-row-preview">${escapeHtml(previewText(n.body)||'Empty note')}</div><div class="note-row-meta"><span>${formatDate(n.updated)}</span>${location}${tags}</div></div>`;
+      row.innerHTML=`<div class="note-drag-handle" title="${currentSortPreference()==='manual'?'Reorder or move note':'Move note'}" aria-label="${currentSortPreference()==='manual'?'Reorder or move note':'Move note'}"><i data-lucide="grip-vertical"></i></div><div class="note-row-content"><div class="note-row-title">${n.pinned?'<i data-lucide="pin" class="note-pin-icon" aria-hidden="true"></i>':''}<span>${escapeHtml(displayTitle(n))}</span></div><div class="note-row-preview">${escapeHtml(previewText(n.body)||'Empty note')}</div><div class="note-row-meta"><span>${formatDate(n.updated)}</span>${location}${tags}</div></div>`;
       row.addEventListener('click',e=>{ if(e.target.closest('.note-drag-handle')) return; flushPendingSave(); selectedId=n.id; persist(); renderAll(); });
       els.notesList.appendChild(row);
     });
+    refreshIcons();
     requestAnimationFrame(setupNoteDragging);
   }
 
@@ -1697,7 +1715,9 @@
     setEditorValue(n.body);
     els.tagsInput.value=(n.tags||[]).join(', ');
     fillFolderSelect();
-    els.pinBtn.textContent=n.pinned?'★':'☆';
+    els.pinBtn.classList.toggle('is-pinned',!!n.pinned);
+    els.pinBtn.title=n.pinned?'Unpin note':'Pin note';
+    els.pinBtn.setAttribute('aria-label',n.pinned?'Unpin note':'Pin note');
     els.pinBtn.disabled=!!n.trashed;
     els.folderSelect.disabled=!!n.trashed;
     if(n.trashed){
@@ -1715,6 +1735,7 @@
       els.deleteBtn.setAttribute('aria-label','Move to Trash');
       els.deleteBtn.innerHTML=ACTION_ICONS.trash;
     }
+    refreshIcons();
     if(previewMode) renderPreview();
     else scheduleTaskCheckboxRefresh();
   }
@@ -2454,6 +2475,7 @@
       }
     }catch{}
     applyWritingPreferences();
+    refreshIcons();
     if(!selectedId && state.notes.length) selectedId=state.notes[0].id;
     if(!state.notes.length) newNote(); else { renderAll(); scheduleStateMirror(); }
     handleIncomingClip();

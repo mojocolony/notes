@@ -64,3 +64,11 @@ Images pasted, dropped, or chosen in Notes are stored locally as attachments and
 - Distinguishes actual fetch/network failures from unrelated JavaScript TypeErrors.
 - Shows the exact failing Dropbox operation in Settings after an error.
 - Keeps transient retry handling from v44.
+
+## v46 UI and editor update
+- Adds a visible `Notes v1.46` build number in the sidebar footer.
+- Replaces the old star treatment for pinned notes with Lucide pin icons.
+- Refreshes the app controls to the Lucide icon family used by Studio.
+- Reworks CodeMirror bottom spacing so the last line remains reachable and editable, with extra handling for viewport/keyboard size changes.
+- Updates the Notes app icon to the same warm, line-based visual family as Studio.
+- Retains the working v45 Dropbox diagnostics and sync fixes unchanged.
